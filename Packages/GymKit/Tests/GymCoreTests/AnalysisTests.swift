@@ -156,4 +156,35 @@ final class AnalysisTests: XCTestCase {
         XCTAssertEqual(SetSuggestion.next(current: [left, right], previous: []).side, .left)
         XCTAssertEqual(SetSuggestion.next(current: [], previous: []), SetSample(weightKg: 0, reps: 0))
     }
+
+    func testRemainingPlannedSetsFollowLastSessionThenRepeat() {
+        let previous = [
+            SetSample(weightKg: 40, reps: 12, effort: .warmup),
+            SetSample(weightKg: 80, reps: 8),
+            SetSample(weightKg: 80, reps: 6, effort: .failure),
+        ]
+        // Plantilla de 4 series, ya hecha la primera: faltan 3; las dos primeras copian la
+        // última sesión y la cuarta (no había) repite la anterior con esfuerzo normal.
+        let done = [SetSample(weightKg: 45, reps: 12, effort: .warmup)]
+        XCTAssertEqual(
+            SetSuggestion.remaining(current: done, previous: previous, target: 4),
+            [previous[1], previous[2], SetSample(weightKg: 80, reps: 6)]
+        )
+        XCTAssertEqual(SetSuggestion.remaining(current: [], previous: previous, target: 2), Array(previous.prefix(2)))
+    }
+
+    func testRemainingIsEmptyWhenTargetReached() {
+        let set = SetSample(weightKg: 50, reps: 10)
+        XCTAssertEqual(SetSuggestion.remaining(current: [set, set], previous: [], target: 2), [])
+        XCTAssertEqual(SetSuggestion.remaining(current: [set, set, set], previous: [], target: 2), [])
+        XCTAssertEqual(SetSuggestion.remaining(current: [], previous: [], target: 0), [])
+    }
+
+    func testRemainingAlternatesSidesWithoutHistory() {
+        let left = SetSample(weightKg: 20, reps: 10, side: .left)
+        XCTAssertEqual(
+            SetSuggestion.remaining(current: [left], previous: [], target: 3).map(\.side),
+            [.right, .left]
+        )
+    }
 }

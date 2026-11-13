@@ -37,8 +37,10 @@ extension Workout {
 
     /// Empieza un entrenamiento nuevo y lo inserta en `context`.
     ///
-    /// Con `template` copia el título, la intensidad y los ejercicios (en el mismo orden,
-    /// sin series) de un entrenamiento anterior: así se repite una rutina.
+    /// Con `template` copia el título, la intensidad y los ejercicios (en el mismo orden)
+    /// de un entrenamiento anterior: así se repite una rutina. Las series no se copian:
+    /// se apunta cuántas había (`ExerciseSetTarget`) y la app las muestra rellenadas con la
+    /// última vez para marcarlas.
     /// Lanza `WorkoutSessionError.alreadyInProgress` si ya hay uno en curso.
     @discardableResult
     public static func start(
@@ -46,22 +48,88 @@ extension Workout {
         at date: Date = .now,
         template: Workout? = nil
     ) throws -> Workout {
+        let plan = (template?.orderedExercises ?? []).compactMap { entry in
+            entry.definition.map { PlannedExercise(definition: $0, targetSets: entry.sets.count) }
+        }
+        return try begin(
+            in: context,
+            at: date,
+            title: template?.title ?? "",
+            intensity: template?.intensity ?? .moderate,
+            plan: plan
+        )
+    }
+
+    /// Empieza un entrenamiento con los ejercicios de una plantilla, en su orden y con sus
+    /// series previstas. Si un ejercicio se borró del catálogo, se vuelve a crear por nombre.
+    @discardableResult
+    public static func start(
+        in context: ModelContext,
+        at date: Date = .now,
+        from template: WorkoutTemplate
+    ) throws -> Workout {
+        // Antes de tocar nada: si hay uno en curso no se crea ni se marca la plantilla.
         if try inProgress(in: context) != nil {
             throw WorkoutSessionError.alreadyInProgress
         }
+        let plan = try template.orderedExercises.map { entry in
+            PlannedExercise(definition: try entry.resolveDefinition(in: context), targetSets: entry.targetSets)
+        }
+        let workout = try begin(in: context, at: date, title: ExerciseName.clean(template.name), intensity: .moderate, plan: plan)
+        template.lastUsedAt = date
+        return workout
+    }
+
+    private struct PlannedExercise {
+        let definition: ExerciseDefinition
+        let targetSets: Int
+    }
+
+    private static func begin(
+        in context: ModelContext,
+        at date: Date,
+        title: String,
+        intensity: WorkoutIntensity,
+        plan: [PlannedExercise]
+    ) throws -> Workout {
+        if try inProgress(in: context) != nil {
+            throw WorkoutSessionError.alreadyInProgress
+        }
+        // Las series previstas solo valen para el entrenamiento en curso.
+        try ExerciseSetTarget.deleteAll(in: context)
         let workout = Workout(
             startedAt: date,
-            title: template?.title ?? "",
-            intensity: template?.intensity ?? .moderate,
+            title: title,
+            intensity: intensity,
             bodyWeightKg: try lastKnownBodyWeightKg(in: context)
         )
         context.insert(workout)
-        for entry in template?.orderedExercises ?? [] {
-            if let definition = entry.definition {
-                workout.addExercise(definition)
+        for item in plan {
+            let exercise = workout.addExercise(item.definition)
+            if item.targetSets > 0 {
+                context.insert(ExerciseSetTarget(
+                    workoutExerciseID: exercise.id,
+                    workoutID: workout.id,
+                    targetSets: item.targetSets
+                ))
             }
         }
         return workout
+    }
+
+    /// Series previstas (de la plantilla) que aún no se han marcado como hechas.
+    public func pendingPlannedSets(in context: ModelContext) throws -> Int {
+        let targets = try setTargets(in: context)
+        return exercises.reduce(0) { total, exercise in
+            total + max(0, (targets[exercise.id] ?? 0) - exercise.sets.count)
+        }
+    }
+
+    /// Series previstas por ejercicio (`WorkoutExercise.id`) del entrenamiento.
+    public func setTargets(in context: ModelContext) throws -> [UUID: Int] {
+        let id = self.id
+        let targets = try context.fetch(FetchDescriptor<ExerciseSetTarget>(predicate: #Predicate { $0.workoutID == id }))
+        return Dictionary(targets.map { ($0.workoutExerciseID, $0.targetSets) }, uniquingKeysWith: { max($0, $1) })
     }
 
     /// Guarda el entrenamiento terminado en Salud y apunta el UUID devuelto.
@@ -90,19 +158,27 @@ extension WorkoutExercise {
     /// que se hizo el ejercicio o, si no, una copia de la última serie de hoy.
     @discardableResult
     public func addSuggestedSet() -> WorkoutSet {
-        let previous: [SetSample]
-        if let workout, let entry = definition?.previousEntry(before: workout) {
-            previous = entry.samples
-        } else {
-            previous = []
-        }
-        let suggestion = SetSuggestion.next(current: samples, previous: previous)
+        let suggestion = SetSuggestion.next(current: samples, previous: previousSamples)
         return addSet(
             weightKg: suggestion.weightKg,
             reps: suggestion.reps,
             effort: suggestion.effort,
             side: suggestion.side
         )
+    }
+}
+
+extension WorkoutExercise {
+    /// Series de este ejercicio la última vez que se hizo (en otro entrenamiento terminado anterior).
+    public var previousSamples: [SetSample] {
+        guard let workout, let entry = definition?.previousEntry(before: workout) else { return [] }
+        return entry.samples
+    }
+
+    /// Series que faltan para llegar a `target`, rellenadas como las añadiría `addSuggestedSet()`
+    /// una a una (la primera es exactamente la que añadiría ahora).
+    public func plannedSets(target: Int) -> [SetSample] {
+        SetSuggestion.remaining(current: samples, previous: previousSamples, target: target)
     }
 }
 

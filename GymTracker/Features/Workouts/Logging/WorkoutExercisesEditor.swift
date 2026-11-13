@@ -9,6 +9,8 @@ import GymData
 ///
 /// - Deslizar una serie a la izquierda la borra.
 /// - En modo "Ordenar" los ejercicios se arrastran para cambiar el orden.
+/// - Si el entrenamiento en curso salió de una plantilla, las series que faltan aparecen
+///   rellenadas con la última vez; se guardan al marcarlas.
 struct WorkoutExercisesEditor: View {
     @Bindable var workout: Workout
     @Binding var isReordering: Bool
@@ -17,6 +19,15 @@ struct WorkoutExercisesEditor: View {
 
     @Environment(\.modelContext) private var context
     @State private var showingPicker = false
+    @Query private var setTargets: [ExerciseSetTarget]
+
+    init(workout: Workout, isReordering: Binding<Bool>, historyDefinition: Binding<ExerciseDefinition?>) {
+        _workout = Bindable(workout)
+        _isReordering = isReordering
+        _historyDefinition = historyDefinition
+        let workoutID = workout.id
+        _setTargets = Query(filter: #Predicate<ExerciseSetTarget> { $0.workoutID == workoutID })
+    }
 
     var body: some View {
         List {
@@ -28,10 +39,12 @@ struct WorkoutExercisesEditor: View {
                         .submitLabel(.done)
                 }
 
+                let targets = plannedTargets
                 ForEach(workout.orderedExercises) { exercise in
                     ExerciseEditorSection(
                         exercise: exercise,
                         workout: workout,
+                        targetSets: targets[exercise.id],
                         onShowHistory: { historyDefinition = exercise.definition },
                         onReorder: { isReordering = true },
                         onDelete: { delete(exercise) }
@@ -97,6 +110,12 @@ struct WorkoutExercisesEditor: View {
         }
     }
 
+    /// Series previstas por ejercicio; solo mientras el entrenamiento está en curso.
+    private var plannedTargets: [UUID: Int] {
+        guard workout.isInProgress else { return [:] }
+        return Dictionary(setTargets.map { ($0.workoutExerciseID, $0.targetSets) }, uniquingKeysWith: { max($0, $1) })
+    }
+
     private func delete(_ exercise: WorkoutExercise) {
         guard let index = workout.orderedExercises.firstIndex(where: { $0.id == exercise.id }) else { return }
         workout.deleteExercises(atOffsets: [index], in: context)
@@ -112,6 +131,8 @@ struct WorkoutExercisesEditor: View {
 private struct ExerciseEditorSection: View {
     @Bindable var exercise: WorkoutExercise
     let workout: Workout
+    /// Series previstas por la plantilla, si las hay.
+    let targetSets: Int?
     let onShowHistory: () -> Void
     let onReorder: () -> Void
     let onDelete: () -> Void
@@ -120,10 +141,12 @@ private struct ExerciseEditorSection: View {
 
     var body: some View {
         let sets = exercise.orderedSets
-        let labels = SetNumbering.labels(for: sets.map(\.effort))
+        let planned = targetSets.map { exercise.plannedSets(target: $0) } ?? []
+        let labels = SetNumbering.labels(for: sets.map(\.effort) + planned.map(\.effort))
         Section {
-            if !sets.isEmpty {
+            if !sets.isEmpty || !planned.isEmpty {
                 SetColumnsHeader()
+                    .sensoryFeedback(.impact(weight: .light), trigger: exercise.sets.count)
             }
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
                 SetEditorRow(set: set, label: labels[index])
@@ -133,15 +156,30 @@ private struct ExerciseEditorSection: View {
                 context.saveNow()
             }
 
-            Button {
-                exercise.addSuggestedSet()
-                context.saveNow()
-            } label: {
-                Label("Añadir serie", systemImage: "plus.circle.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 40)
+            if planned.isEmpty {
+                Button {
+                    exercise.addSuggestedSet()
+                    context.saveNow()
+                } label: {
+                    Label("Añadir serie", systemImage: "plus.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+            } else {
+                // Posición en la lista (no un id): cambian al marcar una serie.
+                ForEach(Array(planned.enumerated()), id: \.offset) { index, sample in
+                    PlannedSetRow(
+                        label: labels[sets.count + index],
+                        sample: sample,
+                        isNext: index == 0,
+                        onComplete: {
+                            exercise.addSuggestedSet()
+                            context.saveNow()
+                        }
+                    )
+                    .deleteDisabled(true)
+                }
             }
-            .sensoryFeedback(.impact(weight: .light), trigger: exercise.sets.count)
         } header: {
             header
         } footer: {
@@ -295,5 +333,69 @@ private struct SetEditorRow: View {
                 .frame(width: Self.sideWidth, height: 36)
                 .background(Color.accentColor.opacity(0.12), in: Capsule())
         }
+    }
+}
+
+/// Serie prevista por la plantilla y aún no hecha, rellenada con la última sesión.
+/// La siguiente se marca con ✓ (se guarda tal cual y luego se puede corregir);
+/// las demás se muestran atenuadas.
+private struct PlannedSetRow: View {
+    let label: String
+    let sample: SetSample
+    let isNext: Bool
+    let onComplete: () -> Void
+
+    var body: some View {
+        HStack(spacing: SetEditorRow.spacing) {
+            SetBadge(label: label, effort: sample.effort)
+                .opacity(isNext ? 1 : 0.45)
+            cell(weightText)
+            Text(SetEditorRow.separator)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            cell(repsText)
+            Button(action: onComplete) {
+                Image(systemName: isNext ? "checkmark.circle.fill" : "circle.dashed")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(isNext ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .frame(width: SetEditorRow.sideWidth, height: 46)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!isNext)
+            .accessibilityLabel(isNext ? "Marcar serie \(label) hecha" : "Serie \(label) pendiente")
+            .accessibilityValue(WorkoutFormat.set(sample))
+        }
+        .buttonStyle(.borderless)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var weightText: String {
+        if sample.weightKg > 0 { return sample.weightKg.formatted(.number.precision(.fractionLength(0...2))) }
+        return sample.reps > 0 ? "0" : "–"
+    }
+
+    /// Repeticiones y, en unilaterales, el lado ("8 I").
+    private var repsText: String {
+        let reps = sample.reps > 0 ? "\(sample.reps)" : "–"
+        return sample.side.shortLabel.isEmpty ? reps : "\(reps) \(sample.side.shortLabel)"
+    }
+
+    private func cell(_ text: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return Text(text)
+            .font(.title3.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(isNext ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(isNext ? Color.accentColor.opacity(0.08) : Color.clear, in: shape)
+            .overlay {
+                shape.strokeBorder(
+                    isNext ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.3),
+                    style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                )
+            }
     }
 }

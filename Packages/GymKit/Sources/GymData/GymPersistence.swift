@@ -1,11 +1,13 @@
 import Foundation
 import SwiftData
 
-/// Versión 1 del esquema.
+/// Versión 1 del esquema: la primera instalada con datos reales.
 ///
-/// Mientras la app no se haya instalado con datos reales, V1 se puede modificar libremente.
-/// A partir de entonces, cualquier cambio en un `@Model` requiere `GymSchemaV2` y una
-/// `MigrationStage` en `GymMigrationPlan`, o se perderán los datos al actualizar.
+/// **No tocar** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition`: V1 se
+/// describe con esas mismas clases y SwiftData reconoce el almacén existente comparando su
+/// huella con la de V1. Si cambian, la app no sabría migrar los datos ya guardados. Para
+/// cambiar uno de esos modelos hay que congelar antes una copia de V1 (clases anidadas en
+/// este enum) y añadir una etapa de migración.
 public enum GymSchemaV1: VersionedSchema {
     public static let versionIdentifier = Schema.Version(1, 0, 0)
 
@@ -14,29 +16,52 @@ public enum GymSchemaV1: VersionedSchema {
     }
 }
 
+/// Versión 2: añade plantillas y series previstas. Solo modelos nuevos, así que la
+/// migración desde V1 es ligera (crea las tablas vacías y conserva todo lo demás).
+public enum GymSchemaV2: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(2, 0, 0)
+
+    public static var models: [any PersistentModel.Type] {
+        GymSchemaV1.models + [WorkoutTemplate.self, TemplateExercise.self, ExerciseSetTarget.self]
+    }
+}
+
+/// Esquema actual de la app.
+public typealias GymSchemaCurrent = GymSchemaV2
+
 public enum GymMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self] }
-    public static var stages: [MigrationStage] { [] }
+    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self] }
+    public static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self)]
+    }
 }
 
 public enum GymPersistence {
     /// Contenedor de la app. Los datos se guardan solo en el dispositivo (sin iCloud).
-    public static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
+    ///
+    /// - Parameter storeURL: solo para tests de migración; por defecto, el almacén de la app
+    ///   en `Application Support`.
+    public static func makeContainer(inMemory: Bool = false, storeURL: URL? = nil) throws -> ModelContainer {
         if !inMemory {
             // En la primera ejecución la carpeta no existe y Core Data registra errores
             // mientras se recupera; crearla antes evita ese ruido.
             try FileManager.default.createDirectory(
-                at: URL.applicationSupportDirectory,
+                at: storeURL?.deletingLastPathComponent() ?? URL.applicationSupportDirectory,
                 withIntermediateDirectories: true
             )
         }
-        let schema = Schema(versionedSchema: GymSchemaV1.self)
-        let configuration = ModelConfiguration(
-            "GymTracker",
-            schema: schema,
-            isStoredInMemoryOnly: inMemory,
-            cloudKitDatabase: .none
-        )
+        let schema = Schema(versionedSchema: GymSchemaCurrent.self)
+        let configuration: ModelConfiguration
+        if let storeURL, !inMemory {
+            configuration = ModelConfiguration("GymTracker", schema: schema, url: storeURL, cloudKitDatabase: .none)
+        } else {
+            configuration = ModelConfiguration(
+                "GymTracker",
+                schema: schema,
+                isStoredInMemoryOnly: inMemory,
+                cloudKitDatabase: .none
+            )
+        }
         return try ModelContainer(
             for: schema,
             migrationPlan: GymMigrationPlan.self,

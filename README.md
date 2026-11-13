@@ -13,7 +13,7 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 - Fase 1 (fundación): estructura, modelo de datos, cálculo de calorías, contrato de Salud.
 - Integración real con HealthKit (`GymTracker/Health/HealthKitService.swift`): lectura de pasos, distancia, minutos de ejercicio, kcal activas/basales y peso; guardado de entrenos de fuerza.
 - Pestaña **Progreso**: calendario, racha semanal y estadísticas (ver abajo).
-- Pestaña **Entrenamientos**: registro en vivo, cierre con calorías y envío a Salud, historial de entrenamientos, historial por ejercicio y comparaciones (ver abajo).
+- Pestaña **Entrenamientos**: registro en vivo, plantillas (rutinas), cierre con calorías y envío a Salud, historial de entrenamientos, historial por ejercicio y comparaciones (ver abajo).
 
 ## Instalar en el iPhone desde Windows (Sideloadly)
 
@@ -152,7 +152,7 @@ Reglas:
 - **Capturas en simulador:** `scripts/smoke-ios.sh` abre la app en Debug con `-screenshots` (datos de `PreviewData` en memoria, ver `ScreenshotMode.swift`) y guarda capturas en claro y oscuro en `build/smoke/`.
 - **Errores visibles:** los errores llevan `errorDescription` en español para mostrarlos tal cual. Si la base de datos no abre, la app muestra una pantalla de error en lugar de cerrarse.
 
-### Modelo de datos (SwiftData, `GymSchemaV1`, en `GymData`)
+### Modelo de datos (SwiftData, `GymSchemaV2`, en `GymData`)
 
 | Modelo | Campos | Relaciones |
 |---|---|---|
@@ -160,13 +160,16 @@ Reglas:
 | `WorkoutExercise` | `orderIndex`, `notes` | `workout`, `definition`, `sets` (cascade) |
 | `WorkoutSet` | `orderIndex`, `weightKg`, `reps`, `effort` (normal/calentamiento/fallo/dropset), `side` (ninguno/izquierda/derecha) | `exercise` |
 | `ExerciseDefinition` | `name`, `normalizedName`, `createdAt` | `entries` (nullify) |
+| `WorkoutTemplate` (V2) | `name`, `createdAt`, `lastUsedAt` | `exercises` (cascade) |
+| `TemplateExercise` (V2) | `orderIndex`, `definitionID`, `exerciseName`, `targetSets` (1–20) | `template` |
+| `ExerciseSetTarget` (V2) | `workoutExerciseID`, `workoutID`, `targetSets` | — (ids) |
 
 - `ExerciseDefinition` es el catálogo: da identidad a "Press banca" en todos los entrenamientos y es lo que permite el historial por ejercicio. Crea o reutiliza con `ExerciseDefinition.findOrCreate(named:in:)` (ignora mayúsculas, tildes y espacios).
 - El orden se guarda en `orderIndex` porque las relaciones de SwiftData no lo conservan. Usa `orderedExercises` / `orderedSets` para mostrar y `moveExercises` / `moveSets` (semántica de `List.onMove`) para arrastrar.
 - Borrar con deslizamiento: `deleteSets(atOffsets:in:)` / `deleteExercises(atOffsets:in:)` borran del almacén y renumeran.
 - `Workout.finish(at:)` valida la hora de fin y calcula las calorías activas. Rechaza sesiones de más de 5 h (entrenamiento olvidado abierto) para no enviar cifras absurdas a Salud.
 - Las series de calentamiento no cuentan para el volumen (`SetEffort.countsTowardVolume`).
-- **Migraciones:** hasta la primera instalación con datos reales, V1 se puede cambiar. Después, cualquier cambio de un `@Model` requiere `GymSchemaV2` y una etapa en `GymMigrationPlan`.
+- **Migraciones:** V1 (los cuatro primeros modelos) ya está instalado con datos reales. V2 solo **añade** modelos, así que la etapa V1→V2 es ligera; `MigrationTests` crea un almacén V1 en disco, lo abre con el esquema actual y comprueba que no se pierde nada. V1 y V2 comparten las clases: **no cambies** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition` sin antes congelar una copia de V1 dentro de `GymSchemaV1` (ver comentario en `GymPersistence.swift`). Por eso los modelos nuevos apuntan a los antiguos por id y no con relaciones (una relación necesitaría su inversa en el modelo antiguo).
 
 ### Pestaña Progreso (calendario, racha y estadísticas)
 
@@ -218,6 +221,7 @@ Código en `GymTracker/Features/Workouts/` (`Logging/` registro en vivo, `Histor
 - **Empezar**: un toque. Solo puede haber un entrenamiento en curso; se puede minimizar o cerrar la app y continuar después (todo se guarda al momento).
 - **Ejercicios**: se buscan o crean escribiendo el nombre (el catálogo evita duplicados por mayúsculas/tildes). Se reordenan arrastrando en modo *Ordenar* (menú ⋯ o mantener pulsado el nombre) y se quitan desde el mismo menú.
 - **Series**: peso, repeticiones, esfuerzo (normal, calentamiento, fallo, dropset) y lado (ninguno, izquierda, derecha). Deslizar a la izquierda borra la serie. *Añadir serie* rellena con la serie de la misma posición la última vez que hiciste el ejercicio o, si no hay, copia la última de hoy (alternando lado en unilaterales). Bajo cada ejercicio se ve lo que hiciste la última vez.
+- **Plantillas** (`Templates/`): apartado en la pestaña con tarjetas para empezar con un toque, lista completa y editor (nombre, ejercicios en orden, series de cada uno con +/−). Al empezar con una plantilla, las series que faltan aparecen **rellenadas con el peso, las repeticiones, el esfuerzo y el lado de la última vez** que hiciste ese ejercicio (`SetSuggestion.remaining`); si la plantilla tiene más series que la última sesión, repite la última. Se guardan al marcarlas con ✓ y después se corrigen como cualquier serie: así una serie que no hiciste no ensucia el historial. Al terminar se avisa si quedan series sin marcar. Un entrenamiento terminado se puede *Guardar como plantilla* desde su detalle; *Repetir* también prevé las mismas series. Si un ejercicio de la plantilla se borró del catálogo, se vuelve a crear por nombre al empezar.
 - **Terminar**: ajusta inicio/fin, intensidad y peso corporal (de Salud si hay permiso, si no el último usado). Muestra las calorías activas estimadas, guarda en local y después llama a `HealthService.saveWorkout`. Si Salud falla, el entrenamiento queda guardado, se avisa y se puede reintentar desde su detalle.
 - **Historial de entrenamientos**: agrupado por mes, con búsqueda por nombre o ejercicio. Detalle con series, volumen, mejor serie y 1RM estimado por ejercicio; editar series, repetir el entrenamiento (mismos ejercicios y orden) y eliminar (no borra el registro de Salud).
 - **Historial por ejercicio**: récords, gráfica de progresión (peso máximo, 1RM estimado o volumen), comparación entre dos sesiones y lista de sesiones. Se puede renombrar el ejercicio sin partir su historial.
