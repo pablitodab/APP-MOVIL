@@ -59,5 +59,19 @@ if ! grep -q "com.apple.developer.healthkit" build/entitlements.txt; then
   exit 1
 fi
 
+# Las acciones de Atajos (App Intents) solo aparecen si Xcode generó sus metadatos.
+INTENTS_DATA="$STAGED_APP/Metadata.appintents/extract.actionsdata"
+if [[ ! -f "$INTENTS_DATA" ]]; then
+  echo "Faltan los metadatos de App Intents: Atajos no vería las acciones de GymTracker." >&2
+  exit 1
+fi
+for intent in GetPendingHealthWorkoutsIntent MarkWorkoutLoggedInHealthIntent SaveHealthDataIntent; do
+  if ! grep -q "$intent" "$INTENTS_DATA"; then
+    echo "La acción $intent no está en los metadatos de App Intents." >&2
+    exit 1
+  fi
+done
+echo "Acciones de Atajos incluidas: GetPendingHealthWorkouts, MarkWorkoutLoggedInHealth, SaveHealthData"
+
 (cd "$STAGING" && zip -qry ../GymTracker.ipa Payload)
 echo "IPA generado: build/GymTracker.ipa ($(du -h build/GymTracker.ipa | cut -f1))"
