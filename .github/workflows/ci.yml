@@ -35,7 +35,8 @@ jobs:
 
       - name: Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          # Xcode estable más reciente instalado en el runner (SDK actual de iOS).
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)"
           xcodebuild -version
 
       - name: Instalar XcodeGen

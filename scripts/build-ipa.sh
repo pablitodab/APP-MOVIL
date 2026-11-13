@@ -15,6 +15,7 @@ STAGING="build/ipa"
 rm -rf "$STAGING" build/GymTracker.ipa
 mkdir -p build
 
+set +e
 xcodebuild build \
   -project GymTracker.xcodeproj \
   -scheme GymTracker \
@@ -24,11 +25,15 @@ xcodebuild build \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
-  | tee build/xcodebuild-device.log \
-  | grep -E "error:|\*\* BUILD" || true
-if [[ "${PIPESTATUS[0]}" -ne 0 ]]; then
-  echo "Falló la compilación para iPhone; ver build/xcodebuild-device.log" >&2
-  exit 1
+  > build/xcodebuild-device.log 2>&1
+STATUS=$?
+set -e
+
+grep -E "error:|\*\* BUILD" build/xcodebuild-device.log || true
+if [[ $STATUS -ne 0 ]]; then
+  echo "Falló la compilación para iPhone ($STATUS). Últimas líneas del log:" >&2
+  tail -n 60 build/xcodebuild-device.log >&2
+  exit $STATUS
 fi
 
 if [[ ! -d "$APP_PATH" ]]; then

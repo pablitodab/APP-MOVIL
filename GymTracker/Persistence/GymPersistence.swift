@@ -22,6 +22,14 @@ enum GymMigrationPlan: SchemaMigrationPlan {
 enum GymPersistence {
     /// Contenedor de la app. Los datos se guardan solo en el dispositivo (sin iCloud).
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
+        if !inMemory {
+            // En la primera ejecución la carpeta no existe y Core Data registra errores
+            // mientras se recupera; crearla antes evita ese ruido.
+            try FileManager.default.createDirectory(
+                at: URL.applicationSupportDirectory,
+                withIntermediateDirectories: true
+            )
+        }
         let schema = Schema(versionedSchema: GymSchemaV1.self)
         let configuration = ModelConfiguration(
             "GymTracker",
