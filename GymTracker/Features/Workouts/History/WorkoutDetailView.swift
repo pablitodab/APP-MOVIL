@@ -95,21 +95,46 @@ struct WorkoutDetailView: View {
     private var summarySection: some View {
         let totals = workout.totals
         return Section {
-            LabeledContent("Fecha", value: workout.startedAt.formatted(date: .complete, time: .omitted))
-            if let endedAt = workout.endedAt {
-                LabeledContent("Horario", value: "\(WorkoutFormat.time(workout.startedAt)) – \(WorkoutFormat.time(endedAt))")
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(StatsFormat.capitalized(workout.startedAt.formatted(date: .complete, time: .omitted)))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if let endedAt = workout.endedAt {
+                        Text("\(WorkoutFormat.time(workout.startedAt)) – \(WorkoutFormat.time(endedAt)) · Intensidad \(workout.intensity.displayName.lowercased())")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                StatGrid {
+                    StatTile(
+                        title: "Duración",
+                        value: workout.duration.map(WorkoutFormat.duration) ?? "—",
+                        systemImage: "clock"
+                    )
+                    StatTile(
+                        title: "Volumen",
+                        value: WorkoutFormat.volume(totals.volumeKg),
+                        systemImage: "scalemass",
+                        tint: .purple
+                    )
+                    StatTile(
+                        title: "Series efectivas",
+                        value: "\(totals.workingSets)",
+                        systemImage: "list.bullet",
+                        tint: .teal,
+                        detail: "\(totals.totalReps) reps"
+                    )
+                    StatTile(
+                        title: "Kcal activas",
+                        value: workout.estimatedActiveKcal.map(WorkoutFormat.kcal) ?? "—",
+                        systemImage: "flame.fill",
+                        tint: .orange,
+                        detail: workout.estimatedActiveKcal == nil ? "Sin peso corporal" : "Estimadas"
+                    )
+                }
             }
-            if let duration = workout.duration {
-                LabeledContent("Duración", value: WorkoutFormat.duration(duration))
-            }
-            if let kcal = workout.estimatedActiveKcal {
-                LabeledContent("Calorías activas (estimadas)", value: WorkoutFormat.kcal(kcal))
-            } else {
-                LabeledContent("Calorías activas", value: "Sin peso corporal")
-            }
-            LabeledContent("Intensidad", value: workout.intensity.displayName)
-            LabeledContent("Series efectivas", value: "\(totals.workingSets) · \(totals.totalReps) reps")
-            LabeledContent("Volumen", value: WorkoutFormat.volume(totals.volumeKg))
+            .plainListRow(vertical: Theme.Spacing.s)
         }
     }
 
@@ -118,7 +143,7 @@ struct WorkoutDetailView: View {
         Section {
             if workout.isSyncedToHealth {
                 Label("Registrado en Salud", systemImage: "heart.fill")
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(Theme.health)
             } else if healthService.isHealthDataAvailable {
                 Button {
                     Task { await syncToHealth() }
@@ -153,13 +178,14 @@ struct WorkoutDetailView: View {
                 NavigationLink(value: WorkoutRoute.exercise(definition)) {
                     HStack(spacing: 4) {
                         Text(exercise.name)
-                        Image(systemName: "chevron.right").font(.caption)
+                        Image(systemName: "chevron.right").font(.caption.weight(.bold))
                     }
-                    .font(.headline)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
                     .textCase(nil)
                 }
             } else {
-                Text(exercise.name).font(.headline).textCase(nil)
+                Text(exercise.name).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
             }
         } footer: {
             if !stats.isEmpty {

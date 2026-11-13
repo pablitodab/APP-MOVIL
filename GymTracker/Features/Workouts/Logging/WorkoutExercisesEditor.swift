@@ -42,10 +42,10 @@ struct WorkoutExercisesEditor: View {
                     Button {
                         showingPicker = true
                     } label: {
-                        Label("Añadir ejercicio", systemImage: "plus.circle.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                        Label("Añadir ejercicio", systemImage: "plus")
                     }
+                    .buttonStyle(PrimaryActionButtonStyle())
+                    .plainListRow()
                 } footer: {
                     if workout.exercises.isEmpty {
                         Text("Añade el primer ejercicio. Las series se rellenan con lo que hiciste la última vez para que solo tengas que corregir.")
@@ -122,6 +122,9 @@ private struct ExerciseEditorSection: View {
         let sets = exercise.orderedSets
         let labels = SetNumbering.labels(for: sets.map(\.effort))
         Section {
+            if !sets.isEmpty {
+                SetColumnsHeader()
+            }
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
                 SetEditorRow(set: set, label: labels[index])
             }
@@ -134,8 +137,9 @@ private struct ExerciseEditorSection: View {
                 exercise.addSuggestedSet()
                 context.saveNow()
             } label: {
-                Label("Añadir serie", systemImage: "plus")
-                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                Label("Añadir serie", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 40)
             }
             .sensoryFeedback(.impact(weight: .light), trigger: exercise.sets.count)
         } header: {
@@ -150,8 +154,9 @@ private struct ExerciseEditorSection: View {
     private var header: some View {
         HStack {
             Text(exercise.name)
-                .font(.title3.weight(.semibold))
+                .font(.title3.weight(.bold))
                 .foregroundStyle(.primary)
+                .lineLimit(2)
             Spacer()
             Menu {
                 Button(action: onShowHistory) {
@@ -191,13 +196,41 @@ private struct ExerciseEditorSection: View {
     }
 }
 
+/// Títulos de columna encima de las series, alineados con `SetEditorRow`.
+private struct SetColumnsHeader: View {
+    var body: some View {
+        HStack(spacing: SetEditorRow.spacing) {
+            Text("SERIE")
+                .frame(width: SetBadge.size)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("KG").frame(maxWidth: .infinity)
+            Text(SetEditorRow.separator)
+                .font(.subheadline.weight(.semibold))
+                .hidden()
+            Text("REPS").frame(maxWidth: .infinity)
+            Text("LADO").frame(width: SetEditorRow.sideWidth)
+        }
+        .font(.caption2.weight(.bold))
+        .tracking(0.5)
+        .foregroundStyle(.secondary)
+        .listRowSeparator(.hidden)
+        .padding(.bottom, -6)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Serie editable: tipo de esfuerzo, peso, repeticiones y lado.
 private struct SetEditorRow: View {
     @Bindable var set: WorkoutSet
     let label: String
 
+    static let spacing: CGFloat = 10
+    static let sideWidth: CGFloat = 40
+    static let separator = "×"
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Self.spacing) {
             Menu {
                 Picker("Esfuerzo", selection: $set.effort) {
                     ForEach(SetEffort.allCases) { effort in
@@ -212,9 +245,10 @@ private struct SetEditorRow: View {
             field {
                 NumberField("kg", value: $set.weightKg, range: 0...1000)
             }
-            Text("kg ×")
-                .font(.caption)
+            Text(Self.separator)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             field {
                 NumberField("reps", value: repsBinding, allowsDecimals: false, range: 0...999)
             }
@@ -242,10 +276,9 @@ private struct SetEditorRow: View {
 
     private func field<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .font(.title3.weight(.medium))
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemFill)))
+            .font(.title3.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(Theme.fieldBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder
@@ -254,13 +287,13 @@ private struct SetEditorRow: View {
         case .bilateral:
             Image(systemName: "arrow.left.and.right")
                 .foregroundStyle(.tertiary)
-                .frame(width: 36, height: 36)
+                .frame(width: Self.sideWidth, height: 46)
         case .left, .right:
             Text(set.side == .left ? "Izq" : "Der")
-                .font(.caption.weight(.semibold))
+                .font(.caption.weight(.bold))
                 .foregroundStyle(Color.accentColor)
-                .frame(width: 36, height: 36)
-                .background(Circle().strokeBorder(Color.accentColor))
+                .frame(width: Self.sideWidth, height: 36)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
         }
     }
 }

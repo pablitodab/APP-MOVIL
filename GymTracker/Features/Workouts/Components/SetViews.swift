@@ -40,14 +40,16 @@ struct SetBadge: View {
     let label: String
     let effort: SetEffort
 
+    static let size: CGFloat = 36
+
     var body: some View {
         Text(label)
             .font(.subheadline.weight(.bold))
             .monospacedDigit()
-            .foregroundStyle(effort == .normal ? Color.primary : Color.white)
-            .frame(width: 34, height: 34)
+            .foregroundStyle(effort == .normal ? Color.accentColor : Color.white)
+            .frame(width: Self.size, height: Self.size)
             .background(
-                Circle().fill(effort == .normal ? Color(.tertiarySystemFill) : effort.tint)
+                Circle().fill(effort == .normal ? Color.accentColor.opacity(0.14) : effort.tint)
             )
             .accessibilityLabel("Serie \(label), \(effort.displayName)")
     }
@@ -62,6 +64,7 @@ struct SetSummaryRow: View {
         HStack(spacing: 12) {
             SetBadge(label: label, effort: sample.effort)
             Text(sample.weightKg > 0 ? WorkoutFormat.weight(sample.weightKg) : "Peso corporal")
+                .font(.body.weight(.semibold))
                 .monospacedDigit()
             Text("× \(sample.reps)")
                 .monospacedDigit()
@@ -74,10 +77,10 @@ struct SetSummaryRow: View {
             }
             if sample.side != .bilateral {
                 Text(sample.side.displayName)
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Theme.fieldBackground))
             }
         }
     }

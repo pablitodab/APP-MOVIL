@@ -104,6 +104,9 @@ struct DeltaText: View {
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(color(difference))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(color(difference).opacity(0.14), in: Capsule())
         }
     }
 

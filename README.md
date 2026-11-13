@@ -148,6 +148,8 @@ Reglas:
 - **La lógica que no necesita SwiftUI/HealthKit va en GymKit** (GymCore si tampoco necesita SwiftData) y se testea con `swift test`. La app solo contiene vistas e integración con el sistema.
 - Los tipos de GymData son `public`; al añadir propiedades o métodos que use la app, márcalos `public`.
 - **Un único calendario:** `GymCalendar.make()` (lunes primero). Todo lo que agrupe por día o semana lo usa.
+- **Estilos en `Shared/Theme.swift`:** espaciados, radios, tarjetas (`.gymCard()`), botones grandes (`PrimaryActionButtonStyle`, 56 pt para usar con una mano), `StatTile`, `StatChip`, `IconBadge`. El color de marca es `AccentColor` (Assets, con variante oscura): usa `Color.accentColor`, no `.blue`. Tipografía redondeada en toda la app (`fontDesign(.rounded)` en `RootTabView`). El icono se regenera con `scripts/generate-app-icon.py`.
+- **Capturas en simulador:** `scripts/smoke-ios.sh` abre la app en Debug con `-screenshots` (datos de `PreviewData` en memoria, ver `ScreenshotMode.swift`) y guarda capturas en claro y oscuro en `build/smoke/`.
 - **Errores visibles:** los errores llevan `errorDescription` en español para mostrarlos tal cual. Si la base de datos no abre, la app muestra una pantalla de error en lugar de cerrarse.
 
 ### Modelo de datos (SwiftData, `GymSchemaV1`, en `GymData`)

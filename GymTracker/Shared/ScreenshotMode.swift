@@ -1,0 +1,30 @@
+#if DEBUG
+import Foundation
+
+/// Solo en Debug (nunca en el IPA): `scripts/smoke-ios.sh` abre la app en el simulador
+/// con estos argumentos para sacar capturas con los datos de ejemplo de las previews,
+/// sin tocar la base de datos real.
+///
+/// - `-screenshots`: usa `PreviewData` en memoria.
+/// - `-tab progress|workouts`: pestaña inicial.
+/// - `-openActiveWorkout`: abre el entrenamiento en curso.
+/// - `-noActiveWorkout`: sin entrenamiento en curso (muestra la tarjeta de inicio).
+///
+/// Salud usa también datos de ejemplo en memoria, así no aparece la petición de permisos.
+enum ScreenshotMode {
+    private static let arguments = ProcessInfo.processInfo.arguments
+
+    static var isEnabled: Bool { arguments.contains("-screenshots") }
+
+    static var initialTab: String? {
+        guard isEnabled, let index = arguments.firstIndex(of: "-tab"), arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return arguments[index + 1]
+    }
+
+    static var opensActiveWorkout: Bool { isEnabled && arguments.contains("-openActiveWorkout") }
+
+    static var includesWorkoutInProgress: Bool { !arguments.contains("-noActiveWorkout") }
+}
+#endif

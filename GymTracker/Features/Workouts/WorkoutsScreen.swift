@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import GymCore
 import GymData
 
 /// Destinos de navegación de la pestaña Entrenamientos.
@@ -21,6 +22,8 @@ struct WorkoutsScreen: View {
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<Workout> { $0.endedAt == nil }, sort: \Workout.startedAt, order: .reverse)
     private var inProgress: [Workout]
+    @Query(filter: #Predicate<Workout> { $0.endedAt != nil }, sort: \Workout.startedAt, order: .reverse)
+    private var finished: [Workout]
 
     @State private var path = NavigationPath()
     @State private var presented: Workout? = nil
@@ -33,21 +36,19 @@ struct WorkoutsScreen: View {
         NavigationStack(path: $path) {
             List {
                 Section {
-                    if let current = inProgress.first {
-                        ActiveWorkoutBanner(workout: current) { presented = current }
-                    } else {
-                        Button {
-                            start(template: nil)
-                        } label: {
-                            Label("Empezar entrenamiento", systemImage: "play.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                    Group {
+                        if let current = inProgress.first {
+                            ActiveWorkoutBanner(workout: current) { presented = current }
+                        } else {
+                            StartWorkoutCard(
+                                week: weekSummary,
+                                lastWorkout: finished.first,
+                                onStart: { start(template: nil) },
+                                onRepeat: { start(template: $0) }
+                            )
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
                     }
+                    .plainListRow()
                 }
 
                 Section {
@@ -55,8 +56,7 @@ struct WorkoutsScreen: View {
                         ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                    .plainListRow()
                 }
 
                 switch segment {
@@ -92,7 +92,20 @@ struct WorkoutsScreen: View {
             .fullScreenCover(item: $presented) { workout in
                 ActiveWorkoutView(workout: workout)
             }
+            #if DEBUG
+            .task {
+                if ScreenshotMode.opensActiveWorkout, presented == nil { presented = inProgress.first }
+            }
+            #endif
         }
+    }
+
+    /// Entrenamientos terminados en la semana actual (lunes a domingo).
+    private var weekSummary: WeekSummary {
+        let calendar = GymCalendar.make()
+        guard let week = calendar.dateInterval(of: .weekOfYear, for: .now) else { return WeekSummary(count: 0, seconds: 0) }
+        let thisWeek = finished.filter { week.contains($0.startedAt) }
+        return WeekSummary(count: thisWeek.count, seconds: thisWeek.compactMap(\.duration).reduce(0, +))
     }
 
     private var searchPrompt: String {
@@ -135,6 +148,74 @@ struct WorkoutsScreen: View {
     }
 }
 
+private struct WeekSummary {
+    let count: Int
+    let seconds: TimeInterval
+}
+
+/// Tarjeta de inicio: resumen de la semana, empezar y repetir el último entrenamiento.
+private struct StartWorkoutCard: View {
+    let week: WeekSummary
+    let lastWorkout: Workout?
+    let onStart: () -> Void
+    let onRepeat: (Workout) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ESTA SEMANA")
+                        .font(.caption.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.75))
+                    Text(weekTitle)
+                        .font(.title2.weight(.bold))
+                        .contentTransition(.numericText())
+                    if week.seconds > 0 {
+                        Text("\(WorkoutFormat.duration(week.seconds)) entrenando")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                }
+                Spacer()
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 40, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .accessibilityHidden(true)
+            }
+
+            VStack(spacing: Theme.Spacing.s) {
+                Button(action: onStart) {
+                    Label("Empezar entrenamiento", systemImage: "play.fill")
+                }
+                .buttonStyle(PrimaryActionButtonStyle(onTintedBackground: true))
+
+                if let lastWorkout {
+                    Button {
+                        onRepeat(lastWorkout)
+                    } label: {
+                        Label("Repetir \(lastWorkout.displayTitle)", systemImage: "arrow.clockwise")
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle(onTintedBackground: true))
+                    .accessibilityHint("Empieza con los mismos ejercicios y las series de la última vez")
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(Theme.Spacing.l + 4)
+        .background(BrandGradientBackground())
+    }
+
+    private var weekTitle: String {
+        switch week.count {
+        case 0: return "Aún sin entrenar"
+        case 1: return "1 entreno"
+        default: return "\(week.count) entrenos"
+        }
+    }
+}
+
 /// Tarjeta del entrenamiento en curso con su cronómetro.
 private struct ActiveWorkoutBanner: View {
     let workout: Workout
@@ -142,30 +223,56 @@ private struct ActiveWorkoutBanner: View {
 
     var body: some View {
         Button(action: onContinue) {
-            HStack(spacing: 14) {
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.title)
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                HStack {
+                    LiveBadge()
+                    Spacer()
+                    Text("\(workout.exercises.count) ej. · \(workout.totals.workingSets) series")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Text(workout.displayTitle)
+                    .font(.title2.weight(.bold))
+                    .lineLimit(1)
+                Text(workout.startedAt, style: .timer)
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Label("Continuar", systemImage: "arrow.up.forward")
+                    .font(.headline)
                     .foregroundStyle(Color.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("En curso · \(workout.displayTitle)")
-                        .font(.headline)
-                    Text("\(workout.exercises.count) ejercicios · \(workout.totals.workingSets) series")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(workout.startedAt, style: .timer)
-                        .font(.title3.weight(.semibold))
-                        .monospacedDigit()
-                    Text("Continuar")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
+                    .frame(maxWidth: .infinity, minHeight: Theme.primaryButtonHeight)
+                    .background(.white, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
             }
-            .padding(.vertical, 6)
+            .foregroundStyle(.white)
+            .padding(Theme.Spacing.l + 4)
+            .background(BrandGradientBackground())
         }
-        .foregroundStyle(.primary)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Entrenamiento en curso: \(workout.displayTitle). Continuar")
+    }
+}
+
+/// Indicador "EN CURSO" con un punto que late.
+private struct LiveBadge: View {
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(.white)
+                .frame(width: 8, height: 8)
+                .opacity(pulsing ? 0.3 : 1)
+                .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
+            Text("EN CURSO")
+                .font(.caption.weight(.bold))
+                .tracking(0.8)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.2), in: Capsule())
+        .onAppear { pulsing = true }
     }
 }
 

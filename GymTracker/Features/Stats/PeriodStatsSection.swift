@@ -207,7 +207,7 @@ struct PeriodStatsSection: View {
                     y: .value(metric.title, point.value)
                 )
                 .foregroundStyle(metric.color.gradient)
-                .cornerRadius(3)
+                .cornerRadius(5)
                 .opacity(isHighlighted(point) ? 1 : 0.35)
             }
             .chartXScale(domain: period.interval.start...period.interval.end)
@@ -218,7 +218,7 @@ struct PeriodStatsSection: View {
                 }
             }
             .chartXSelection(value: $selectedDate)
-            .frame(height: 180)
+            .frame(height: 190)
             .overlay {
                 if points == nil, isLoading(metric) {
                     ProgressView()
@@ -231,8 +231,7 @@ struct PeriodStatsSection: View {
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .gymCard()
     }
 
     private var chartHeader: some View {
@@ -255,7 +254,7 @@ struct PeriodStatsSection: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(metric.color)
             Text(headline)
-                .font(.title2.weight(.bold))
+                .font(.largeTitle.weight(.bold))
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Text(caption)
@@ -374,9 +373,9 @@ private struct HealthNoticeView: View {
             Image(systemName: icon)
                 .foregroundStyle(tint)
         }
-        .padding(12)
+        .padding(Theme.Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
     }
 
     private var message: String {
@@ -441,13 +440,12 @@ private struct MetricCard: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .gymCard(padding: Theme.Spacing.m, radius: Theme.Radius.tile)
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
                 .strokeBorder(isSelected ? metric.color : Color.clear, lineWidth: 2)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

@@ -40,8 +40,9 @@ struct ActiveWorkoutView: View {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         Text(workout.startedAt, style: .timer)
-                            .font(.headline)
+                            .font(.headline.weight(.bold))
                             .monospacedDigit()
+                            .foregroundStyle(Color.accentColor)
                         Text("Desde las \(WorkoutFormat.time(workout.startedAt))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -71,6 +72,8 @@ struct ActiveWorkoutView: View {
 
                         Button("Terminar") { showingFinish = true }
                             .bold()
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
                     }
                 }
             }

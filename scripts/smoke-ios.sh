@@ -61,3 +61,23 @@ if ! grep -q "UIKitApplication:$BUNDLE_ID" "$OUT/launchctl.txt"; then
   exit 1
 fi
 echo "La app arranca y sigue en ejecución."
+
+# Capturas con los datos de ejemplo de las previews (solo Debug, base de datos en memoria:
+# ver ScreenshotMode.swift), en modo claro y oscuro.
+shot() {
+  local name="$1"
+  shift
+  xcrun simctl terminate "$DEVICE_ID" "$BUNDLE_ID" > /dev/null 2>&1 || true
+  xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID" -screenshots "$@" > /dev/null
+  sleep 6
+  xcrun simctl io "$DEVICE_ID" screenshot "$OUT/$name.png" > /dev/null
+  echo "Captura: $OUT/$name.png"
+}
+xcrun simctl status_bar "$DEVICE_ID" override --time "9:41" --batteryState charged --batteryLevel 100 > /dev/null 2>&1 || true
+for appearance in light dark; do
+  xcrun simctl ui "$DEVICE_ID" appearance "$appearance"
+  shot "$appearance-1-inicio" -tab workouts -noActiveWorkout
+  shot "$appearance-2-en-curso" -tab workouts
+  shot "$appearance-3-registro" -tab workouts -openActiveWorkout
+  shot "$appearance-4-progreso" -tab progress
+done

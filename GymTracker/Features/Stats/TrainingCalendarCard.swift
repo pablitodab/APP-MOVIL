@@ -24,8 +24,7 @@ struct TrainingCalendarCard: View {
                 MonthDotsGrid(grid: grid, trainedDays: trainedDays, today: calendar.startOfDay(for: now), calendar: calendar)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .gymCard()
     }
 
     private func monthHeader(grid: MonthGrid, trainedDays: Set<Date>) -> some View {
@@ -33,7 +32,7 @@ struct TrainingCalendarCard: View {
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(monthTitle(grid.month.start))
-                    .font(.headline)
+                    .font(.headline.weight(.bold))
                 Text(trainedThisMonth == 1 ? "1 día entrenado" : "\(trainedThisMonth) días entrenados")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -71,13 +70,16 @@ private struct StreakHeader: View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "flame.fill")
                 .font(.title2)
-                .foregroundStyle(streak.current > 0 ? Color.orange : Color.secondary)
-                .frame(width: 40, height: 40)
-                .background((streak.current > 0 ? Color.orange : Color.secondary).opacity(0.15), in: Circle())
+                .foregroundStyle(streak.current > 0 ? Theme.streak : Color.secondary)
+                .frame(width: 44, height: 44)
+                .background(
+                    (streak.current > 0 ? Theme.streak : Color.secondary).opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(streak.current == 1 ? "1 semana seguida" : "\(streak.current) semanas seguidas")
-                    .font(.title3.weight(.semibold))
+                    .font(.title3.weight(.bold))
                     .contentTransition(.numericText())
                 Text(subtitle)
                     .font(.caption)
@@ -133,7 +135,7 @@ private struct MonthDotsGrid: View {
                             .accessibilityLabel(accessibilityLabel(day: day))
                     } else {
                         Color.clear
-                            .frame(height: 18)
+                            .frame(height: 22)
                             .accessibilityHidden(true)
                     }
                 }
@@ -154,13 +156,14 @@ private struct DayDot: View {
 
     var body: some View {
         Circle()
-            .fill(trained ? Color.blue : Color(.systemGray4))
-            .frame(width: 10, height: 10)
+            .fill(trained ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(Color(.systemGray4)))
+            .frame(width: trained ? 12 : 10, height: trained ? 12 : 10)
+            .shadow(color: trained ? Color.accentColor.opacity(0.45) : .clear, radius: 3)
             .opacity(isFuture ? 0.4 : 1)
-            .frame(width: 18, height: 18)
+            .frame(width: 22, height: 22)
             .overlay {
                 if isToday {
-                    Circle().strokeBorder(Color.blue, lineWidth: 1.5)
+                    Circle().strokeBorder(Color.accentColor, lineWidth: 1.5)
                 }
             }
     }

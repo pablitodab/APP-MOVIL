@@ -34,7 +34,17 @@ struct WorkoutHistorySections: View {
             if items.count >= 2 {
                 Section {
                     NavigationLink(value: WorkoutRoute.comparison(baseline: items[1], current: items[0])) {
-                        Label("Comparar entrenamientos", systemImage: "arrow.left.arrow.right")
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Comparar entrenamientos")
+                                    .font(.headline)
+                                Text("Último frente al anterior, o elige dos")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            IconBadge(systemImage: "arrow.left.arrow.right")
+                        }
                     }
                 }
             }
@@ -93,41 +103,70 @@ struct WorkoutHistoryRow: View {
 
     var body: some View {
         let totals = workout.totals
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(workout.displayTitle)
-                    .font(.headline)
-                Spacer()
-                if workout.isSyncedToHealth {
-                    Image(systemName: "heart.fill")
-                        .foregroundStyle(.pink)
+        HStack(alignment: .top, spacing: Theme.Spacing.m) {
+            DateTile(date: workout.startedAt)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(workout.displayTitle)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if workout.isSyncedToHealth {
+                        Image(systemName: "heart.fill")
+                            .foregroundStyle(Theme.health)
+                            .font(.caption)
+                            .accessibilityLabel("Registrado en Salud")
+                    }
+                    Spacer(minLength: 0)
+                    Text(WorkoutFormat.time(workout.startedAt))
                         .font(.caption)
-                        .accessibilityLabel("Registrado en Salud")
+                        .foregroundStyle(.secondary)
                 }
-            }
-            Text(WorkoutFormat.dayAndTime(workout.startedAt))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                if let duration = workout.duration {
-                    Label(WorkoutFormat.duration(duration), systemImage: "clock")
+                if !workout.exercises.isEmpty {
+                    Text(workout.orderedExercises.map(\.name).joined(separator: " · "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                Label("\(workout.exercises.count) ej. · \(totals.workingSets) series", systemImage: "list.bullet")
-                if totals.volumeKg > 0 {
-                    Label(WorkoutFormat.volume(totals.volumeKg), systemImage: "scalemass")
+                ViewThatFits(in: .horizontal) {
+                    chips(totals: totals, includeVolume: true)
+                    chips(totals: totals, includeVolume: false)
                 }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
-            if !workout.exercises.isEmpty {
-                Text(workout.orderedExercises.map(\.name).joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Theme.Spacing.xs)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func chips(totals: ExerciseSessionStats, includeVolume: Bool) -> some View {
+        HStack(spacing: 6) {
+            if let duration = workout.duration {
+                StatChip(text: WorkoutFormat.duration(duration), systemImage: "clock")
+            }
+            StatChip(text: "\(totals.workingSets) series", systemImage: "list.bullet")
+            if includeVolume, totals.volumeKg > 0 {
+                StatChip(text: WorkoutFormat.volume(totals.volumeKg), systemImage: "scalemass")
+            }
+        }
+    }
+}
+
+/// Día de la semana y número del día, para encabezar filas del historial.
+struct DateTile: View {
+    let date: Date
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(date.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(Color.accentColor)
+            Text(date.formatted(.dateTime.day()))
+                .font(.title2.weight(.bold))
+                .monospacedDigit()
+        }
+        .frame(width: 48, height: 52)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityHidden(true)
     }
 }
 
@@ -166,12 +205,15 @@ struct ExerciseHistorySections: View {
             Section("Ordenados por último uso") {
                 ForEach(items) { item in
                     NavigationLink(value: WorkoutRoute.exercise(item.definition)) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(item.definition.name)
-                                .font(.headline)
-                            Text(subtitle(for: item))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: Theme.Spacing.m) {
+                            IconBadge(systemImage: "dumbbell.fill", size: 40)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.definition.name)
+                                    .font(.headline)
+                                Text(subtitle(for: item))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(.vertical, 2)
                     }

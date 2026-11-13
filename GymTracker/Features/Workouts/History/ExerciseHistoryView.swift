@@ -75,14 +75,37 @@ struct ExerciseHistoryView: View {
 
     private var recordsSection: some View {
         let records = definition.records
-        return Section("Récords") {
-            LabeledContent("Serie más pesada", value: records.heaviestSet.map(WorkoutFormat.set) ?? "—")
-            LabeledContent(
-                "Mejor 1RM estimado",
-                value: records.bestEstimatedOneRepMaxKg.map { WorkoutFormat.weight($0.rounded()) } ?? "—"
-            )
-            LabeledContent("Mayor volumen en una sesión", value: records.bestSessionVolumeKg.map(WorkoutFormat.volume) ?? "—")
-            LabeledContent("Sesiones", value: "\(records.sessionCount)")
+        return Section {
+            StatGrid {
+                StatTile(
+                    title: "Serie más pesada",
+                    value: records.heaviestSet.map(WorkoutFormat.set) ?? "—",
+                    systemImage: "trophy.fill",
+                    tint: .orange
+                )
+                StatTile(
+                    title: "Mejor 1RM est.",
+                    value: records.bestEstimatedOneRepMaxKg.map { WorkoutFormat.weight($0.rounded()) } ?? "—",
+                    systemImage: "bolt.fill"
+                )
+                StatTile(
+                    title: "Mayor volumen",
+                    value: records.bestSessionVolumeKg.map(WorkoutFormat.volume) ?? "—",
+                    systemImage: "scalemass",
+                    tint: .purple,
+                    detail: "En una sesión"
+                )
+                StatTile(
+                    title: "Sesiones",
+                    value: "\(records.sessionCount)",
+                    systemImage: "calendar",
+                    tint: .teal,
+                    detail: " "
+                )
+            }
+            .plainListRow(vertical: Theme.Spacing.s)
+        } header: {
+            Text("Récords")
         }
     }
 
@@ -125,10 +148,14 @@ struct ExerciseHistoryView: View {
                         y: .value("Valor", point.value)
                     )
                     .interpolationMethod(.monotone)
+                    .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .foregroundStyle(Color.accentColor.gradient)
                     PointMark(
                         x: .value("Fecha", point.date, unit: .day),
                         y: .value("Valor", point.value)
                     )
+                    .symbolSize(50)
+                    .foregroundStyle(Color.accentColor)
                 }
                 .chartYScale(domain: .automatic(includesZero: false))
                 .chartYAxisLabel("kg")
