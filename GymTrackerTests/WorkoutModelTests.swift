@@ -28,7 +28,7 @@ final class WorkoutModelTests: XCTestCase {
     func testFindOrCreateReusesExerciseIgnoringCaseAccentsAndSpaces() throws {
         let first = try ExerciseDefinition.findOrCreate(named: "Press banca", in: context)
         try context.save()
-        let second = try ExerciseDefinition.findOrCreate(named: "  PRÉS   banca ", in: context)
+        let second = try ExerciseDefinition.findOrCreate(named: "  PRESS   Bánca ", in: context)
         XCTAssertEqual(first.id, second.id)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseDefinition>()), 1)
         XCTAssertEqual(first.name, "Press banca")

@@ -28,7 +28,7 @@ final class DomainTests: XCTestCase {
 
     func testExerciseNameKeyIgnoresCaseAccentsAndSpaces() {
         let key = ExerciseName.normalizedKey("press banca")
-        XCTAssertEqual(ExerciseName.normalizedKey("  PRÉS   Banca "), key)
+        XCTAssertEqual(ExerciseName.normalizedKey("  PRESS   Bánca "), key)
         XCTAssertNotEqual(ExerciseName.normalizedKey("Press inclinado"), key)
     }
 }
