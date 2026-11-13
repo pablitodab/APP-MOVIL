@@ -68,6 +68,9 @@ public enum HealthServiceError: Error, Equatable, LocalizedError, Sendable {
     case unavailable
     /// El usuario no ha concedido permiso de escritura.
     case notAuthorized
+    /// La app se instaló con una firma cuyo perfil no incluye HealthKit: Salud no
+    /// puede mostrar la hoja de permisos. Se arregla reinstalando, no en Ajustes.
+    case missingEntitlement
     case invalidDateRange
     case invalidWorkout
     /// Error del sistema; se conserva su descripción para mostrarla.
@@ -79,6 +82,8 @@ public enum HealthServiceError: Error, Equatable, LocalizedError, Sendable {
             return "La app Salud no está disponible."
         case .notAuthorized:
             return "No hay permiso para acceder a Salud. Revísalo en Ajustes > Salud > Acceso a datos y dispositivos."
+        case .missingEntitlement:
+            return "Esta instalación no tiene el permiso de HealthKit en su firma, así que Salud no puede pedir acceso. No se arregla en Ajustes: hay que reinstalar con una firma que incluya HealthKit. Detalles en Progreso > Diagnóstico de Salud."
         case .invalidDateRange:
             return "El rango de fechas no es válido."
         case .invalidWorkout:

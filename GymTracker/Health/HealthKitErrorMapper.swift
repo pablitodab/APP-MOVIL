@@ -9,6 +9,12 @@ enum HealthKitErrorMapper {
         if let error = error as? HealthServiceError {
             return error
         }
+        // Sin el entitlement, HealthKit responde con `errorAuthorizationDenied` y un
+        // mensaje "Missing com.apple.developer.healthkit entitlement": no es que el
+        // usuario lo haya denegado, así que no se le manda a Ajustes.
+        if isMissingEntitlement(error) {
+            return .missingEntitlement
+        }
         guard let healthKitError = error as? HKError else {
             return .underlying(error.localizedDescription)
         }
@@ -27,6 +33,12 @@ enum HealthKitErrorMapper {
         default:
             return .underlying(healthKitError.localizedDescription)
         }
+    }
+
+    static func isMissingEntitlement(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        let texts = [nsError.localizedDescription, nsError.localizedFailureReason, nsError.debugDescription]
+        return texts.contains { $0?.localizedCaseInsensitiveContains("entitlement") == true }
     }
 
     /// `errorNoData` significa "no hay muestras", no un fallo: se trata como vacío.

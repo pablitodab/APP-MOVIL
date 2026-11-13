@@ -16,6 +16,7 @@ struct StatsScreen: View {
     @State private var health = HealthStatsLoader()
     @State private var range: StatsRange = .week
     @State private var offset = 0
+    @State private var showsDiagnostics = false
 
     private let calendar = GymCalendar.make()
 
@@ -44,6 +45,18 @@ struct StatsScreen: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Progreso")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showsDiagnostics = true
+                    } label: {
+                        Label("Diagnóstico de Salud", systemImage: "stethoscope")
+                    }
+                }
+            }
+            .sheet(isPresented: $showsDiagnostics) {
+                HealthDiagnosticsView()
+            }
             .refreshable {
                 guard let period = StatsPeriod(range: range, offset: offset, now: .now, calendar: calendar) else { return }
                 await health.load(period: period, service: healthService, calendar: calendar)

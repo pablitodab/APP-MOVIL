@@ -32,6 +32,8 @@ Limitaciones de una cuenta de Apple gratuita:
 - Máximo 3 apps instaladas así a la vez.
 - Una cuenta de Apple Developer de pago (99 $/año) amplía la firma a 1 año.
 
+**Si Salud no pide permisos y la app no sale en Salud > Fuentes:** abre *Progreso* y pulsa el estetoscopio (*Diagnóstico de Salud*). Muestra si el perfil con el que Sideloadly firmó la app incluye HealthKit, el estado de los permisos y el error exacto de HealthKit al pedirlos. Si "HealthKit en el perfil" es *No*, iOS le ha quitado Salud a la app en la instalación: no se arregla en Ajustes, hay que reinstalar con una firma cuyo App ID tenga HealthKit. *Copiar informe* copia el diagnóstico en texto.
+
 Por qué el IPA lleva una firma ad-hoc: Sideloadly toma los *entitlements* (permisos como HealthKit) de la firma existente. Un IPA sin ninguna firma perdería el permiso de Salud. `scripts/build-ipa.sh` firma ad-hoc con `GymTracker.entitlements` y el CI falla si el entitlement de HealthKit no queda incrustado.
 
 ## Desarrollo con Mac (opcional)
