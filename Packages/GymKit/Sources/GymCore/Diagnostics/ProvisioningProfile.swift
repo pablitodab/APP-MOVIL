@@ -8,6 +8,7 @@ import Foundation
 /// `com.apple.developer.healthkit`, Salud rechaza los permisos aunque el IPA lo pida.
 public struct ProvisioningProfile: Equatable, Sendable {
     public static let healthKitEntitlement = "com.apple.developer.healthkit"
+    public static let appGroupsEntitlement = "com.apple.security.application-groups"
 
     public let name: String?
     public let teamName: String?
@@ -16,6 +17,9 @@ public struct ProvisioningProfile: Equatable, Sendable {
     /// Claves de entitlements que concede el perfil, ordenadas.
     public let entitlementKeys: [String]
     public let grantsHealthKit: Bool
+    /// App Groups que concede el perfil. AltStore/SideStore los renombran a
+    /// `<grupo>.<TEAMID>`; Sideloadly con Apple ID gratuito no concede ninguno.
+    public let appGroups: [String]
 
     public init(
         name: String?,
@@ -23,7 +27,8 @@ public struct ProvisioningProfile: Equatable, Sendable {
         appIdentifier: String?,
         expirationDate: Date?,
         entitlementKeys: [String],
-        grantsHealthKit: Bool
+        grantsHealthKit: Bool,
+        appGroups: [String] = []
     ) {
         self.name = name
         self.teamName = teamName
@@ -31,6 +36,7 @@ public struct ProvisioningProfile: Equatable, Sendable {
         self.expirationDate = expirationDate
         self.entitlementKeys = entitlementKeys
         self.grantsHealthKit = grantsHealthKit
+        self.appGroups = appGroups
     }
 
     public enum ParseError: Error, Equatable, LocalizedError {
@@ -66,7 +72,8 @@ public struct ProvisioningProfile: Equatable, Sendable {
             appIdentifier: entitlements["application-identifier"] as? String,
             expirationDate: plist["ExpirationDate"] as? Date,
             entitlementKeys: entitlements.keys.sorted(),
-            grantsHealthKit: entitlements[healthKitEntitlement] as? Bool == true
+            grantsHealthKit: entitlements[healthKitEntitlement] as? Bool == true,
+            appGroups: entitlements[appGroupsEntitlement] as? [String] ?? []
         )
     }
 }
