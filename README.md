@@ -11,7 +11,8 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 ## Estado
 
 Fase 1 (fundación): estructura, modelo de datos, cálculo de calorías, contrato de Salud y las dos pestañas vacías.
-Pendiente: registro de entrenamientos, historiales, calendario/estadísticas e integración real con HealthKit.
+Pestaña Progreso: calendario, racha semanal y estadísticas (ver abajo).
+Pendiente: registro de entrenamientos, historiales e integración real con HealthKit.
 
 ## Instalar en el iPhone desde Windows (Sideloadly)
 
@@ -65,7 +66,8 @@ Packages/GymKit/               Paquete Swift local con todo lo testeable sin sim
   Sources/GymCore/             Dominio puro (Foundation; compila también en Linux)
     Domain/                    SetEffort, BodySide, normalización de nombres, reordenación
     Calories/                  Intensidad (MET) y CalorieCalculator
-    Calendar/                  GymCalendar (semanas de lunes a domingo)
+    Calendar/                  GymCalendar (semanas de lunes a domingo), MonthGrid, WeeklyStreak
+    Stats/                     Periodos (semana/mes/6 meses/año) y agregación de Salud y tiempo de entreno
     Health/                    Protocolo HealthService, modelos y servicios sin HealthKit
   Sources/GymData/             Modelos SwiftData, esquema versionado y contenedor
   Tests/                       GymCoreTests y GymDataTests
@@ -96,6 +98,14 @@ Reglas:
 - `Workout.finish(at:)` valida la hora de fin y calcula las calorías activas. Rechaza sesiones de más de 5 h (entrenamiento olvidado abierto) para no enviar cifras absurdas a Salud.
 - Las series de calentamiento no cuentan para el volumen (`SetEffort.countsTowardVolume`).
 - **Migraciones:** hasta la primera instalación con datos reales, V1 se puede cambiar. Después, cualquier cambio de un `@Model` requiere `GymSchemaV2` y una etapa en `GymMigrationPlan`.
+
+### Pestaña Progreso (calendario, racha y estadísticas)
+
+- **Calendario**: mes pequeño con lunes en la primera columna (`MonthGrid`); un punto gris por día que pasa a azul si ese día empezó un entrenamiento terminado. Se puede ir a meses anteriores.
+- **Racha semanal** (`WeeklyStreak`): semanas seguidas (lunes a domingo) con al menos un entrenamiento terminado. La semana en curso no rompe la racha hasta que acaba; si aún no has entrenado, la app lo recuerda. También muestra la mejor racha.
+- **Estadísticas por periodo** (`StatsPeriod`): Semana y Mes (barra por día), 6 meses (barra por semana, 26 semanas) y Año (barra por mes). Flechas para ver periodos anteriores; tocar una barra muestra su valor.
+- **Fuentes**: pasos, distancia, minutos de ejercicio y kcal activas/basales vienen de Salud (`HealthService.dailySummaries`). El **tiempo de entreno** sale de los entrenamientos guardados en la app, porque sin Apple Watch Salud apenas registra minutos de ejercicio.
+- **Sin datos ≠ 0**: Salud devuelve ceros si no hay datos o si se denegó el permiso de lectura (no da error). Por eso un total de 0 se muestra como "Sin datos" y, si todo es 0, se indica cómo revisar los permisos. Las medias diarias dividen solo entre los días ya transcurridos del periodo.
 
 ### Calorías
 
@@ -129,7 +139,7 @@ Para que el trabajo en paralelo no se pise, cada parte toca solo sus carpetas:
 | Parte | Carpetas | Toca también |
 |---|---|---|
 | Registro de entrenamientos e historiales | `GymTracker/Features/Workouts/` | Helpers en `Packages/GymKit/Sources/GymData/` si faltan |
-| Calendario, racha y estadísticas | `GymTracker/Features/Stats/`, lógica de racha en `Packages/GymKit/Sources/GymCore/Calendar/` | — |
+| Calendario, racha y estadísticas | `GymTracker/Features/Stats/`, `Packages/GymKit/Sources/GymCore/Calendar/` y `GymCore/Stats/` | — |
 | Integración HealthKit | `GymTracker/Health/` | Una línea en `GymTrackerApp` para inyectar el servicio |
 
 Cambios en `GymCore/Health/HealthService.swift` o en el esquema de `GymData` afectan a todas las partes: hazlos en un PR propio.
