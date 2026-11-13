@@ -36,6 +36,23 @@ Limitaciones de una cuenta de Apple gratuita:
 
 Por qué el IPA lleva una firma ad-hoc: Sideloadly toma los *entitlements* (permisos como HealthKit) de la firma existente. Un IPA sin ninguna firma perdería el permiso de Salud. `scripts/build-ipa.sh` firma ad-hoc con `GymTracker.entitlements` y el CI falla si el entitlement de HealthKit no queda incrustado.
 
+## Salud con cuenta de pago: TestFlight
+
+Con un Apple ID gratuito, ninguna herramienta de sideload (Sideloadly, AltStore, SideStore) consigue un perfil con HealthKit: la app se instala, pero Salud responde "Missing com.apple.developer.healthkit entitlement". Con el Apple Developer Program (de pago) la app se sube a TestFlight desde GitHub Actions y se instala desde la app TestFlight, sin PC y sin reinstalar cada 7 días (cada build dura 90 días).
+
+Pasos (una sola vez):
+
+1. **Alta en el Apple Developer Program** en developer.apple.com/programs/enroll (o desde la app Apple Developer del iPhone). Apple puede tardar hasta 48 h en aprobarla.
+2. **App ID con HealthKit.** En developer.apple.com → *Certificates, IDs & Profiles* → *Identifiers* → **+** → *App IDs* → *App*. Bundle ID explícito `com.pablitodab.gymtracker` y marca **HealthKit** en *Capabilities*.
+3. **Ficha en App Store Connect.** appstoreconnect.apple.com → *Apps* → **+** → *Nueva app*. Plataforma iOS, el bundle ID anterior y cualquier SKU. El nombre debe ser único en la App Store; si "GymTracker" está cogido, usa otro: no cambia nada en la app.
+4. **Clave de API.** App Store Connect → *Usuarios y acceso* → *Integraciones* → *App Store Connect API* → *Claves de equipo* → **+**, con acceso **Admin** (la firma en la nube lo necesita). Descarga el `.p8` (solo se puede una vez) y apunta el *Key ID* y el *Issuer ID*.
+5. **Team ID** en developer.apple.com → *Account* → *Membership details*.
+6. **Secretos en GitHub.** Repo → *Settings* → *Secrets and variables* → *Actions*: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (el texto completo del `.p8`) y `APPLE_TEAM_ID`. Si usaste otro bundle ID, créalo como *variable* `BUNDLE_ID`.
+7. **Subir.** *Actions* → *TestFlight* → *Run workflow*. `scripts/upload-testflight.sh` archiva con firma automática (Xcode crea el certificado y el perfil con HealthKit) y sube la build.
+8. **Instalar.** App Store Connect → *TestFlight* → *Pruebas internas* → crea un grupo y añádete. En el iPhone instala TestFlight y acepta la invitación. Las pruebas internas no pasan revisión de Apple.
+
+La versión de TestFlight tiene otro bundle ID que la de Sideloadly (que añade un sufijo), así que conviven y no comparten datos: cuando la de TestFlight funcione, borra la de Sideloadly.
+
 ## Desarrollo con Mac (opcional)
 
 ```bash
