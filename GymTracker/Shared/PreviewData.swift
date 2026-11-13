@@ -64,20 +64,32 @@ enum PreviewData {
                 }
             }
 
+            // Plantillas: una creada a mano y otra guardada desde un entrenamiento.
+            let legs = WorkoutTemplate(name: "Pierna", createdAt: .now.addingTimeInterval(-40 * 86_400))
+            context.insert(legs)
+            legs.addExercise(squat, targetSets: 4)
+            legs.addExercise(deadlift, targetSets: 3)
+            legs.lastUsedAt = calendar.date(byAdding: .day, value: -3, to: .now)
+            let torso = WorkoutTemplate(name: "Torso", createdAt: .now.addingTimeInterval(-35 * 86_400))
+            context.insert(torso)
+            torso.addExercise(bench, targetSets: 4)
+            torso.addExercise(row, targetSets: 2)
+            torso.lastUsedAt = calendar.date(byAdding: .day, value: -1, to: .now)
+
             guard includesWorkoutInProgress else {
                 try context.save()
                 return container
             }
 
-            // Entrenamiento en curso, empezado hace 25 minutos.
-            let current = Workout(startedAt: .now.addingTimeInterval(-25 * 60), title: "Pierna", bodyWeightKg: 80)
-            context.insert(current)
-            let squatEntry = current.addExercise(squat)
+            // Entrenamiento en curso desde la plantilla «Pierna», empezado hace 25 minutos:
+            // sentadilla con 3 de 4 series marcadas y peso muerto con 1 de 3.
+            try context.save()
+            let current = try Workout.start(in: context, at: .now.addingTimeInterval(-25 * 60), from: legs)
+            let squatEntry = current.orderedExercises[0]
             squatEntry.addSet(weightKg: 60, reps: 10, effort: .warmup)
             squatEntry.addSet(weightKg: 110, reps: 6)
             squatEntry.addSet(weightKg: 110, reps: 5)
-            let deadliftEntry = current.addExercise(deadlift)
-            deadliftEntry.addSuggestedSet()
+            current.orderedExercises[1].addSuggestedSet()
 
             try context.save()
             return container

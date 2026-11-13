@@ -110,9 +110,17 @@ struct FinishWorkoutView: View {
             LabeledContent("Series efectivas", value: "\(totals.workingSets)")
             LabeledContent("Volumen", value: WorkoutFormat.volume(totals.volumeKg))
         } footer: {
-            if totals.isEmpty {
-                Text("No hay ninguna serie con repeticiones. Puedes guardarlo igualmente o volver y completarlo.")
-                    .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                if totals.isEmpty {
+                    Text("No hay ninguna serie con repeticiones. Puedes guardarlo igualmente o volver y completarlo.")
+                        .foregroundStyle(.orange)
+                }
+                let pending = (try? workout.pendingPlannedSets(in: context)) ?? 0
+                if pending > 0 {
+                    Text(pending == 1
+                         ? "Queda 1 serie de la plantilla sin marcar: no se guardará. Si la hiciste, vuelve con «Seguir entrenando» y márcala."
+                         : "Quedan \(pending) series de la plantilla sin marcar: no se guardarán. Si las hiciste, vuelve con «Seguir entrenando» y márcalas.")
+                }
             }
         }
     }

@@ -8,9 +8,11 @@ enum WorkoutRoute: Hashable {
     case workout(Workout)
     case exercise(ExerciseDefinition)
     case comparison(baseline: Workout?, current: Workout)
+    case templates
+    case template(WorkoutTemplate)
 }
 
-/// Pestaña "Entrenamientos": empezar/continuar un entrenamiento, historial de
+/// Pestaña "Entrenamientos": empezar/continuar un entrenamiento, plantillas, historial de
 /// entrenamientos e historial por ejercicio.
 struct WorkoutsScreen: View {
     enum Segment: String, CaseIterable, Identifiable {
@@ -31,6 +33,7 @@ struct WorkoutsScreen: View {
     @State private var searchText = ""
     @State private var pendingDeletion: Workout? = nil
     @State private var errorMessage: String? = nil
+    @State private var creatingTemplate = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -49,6 +52,16 @@ struct WorkoutsScreen: View {
                         }
                     }
                     .plainListRow()
+                }
+
+                if searchText.isEmpty {
+                    TemplatesSection(
+                        canStart: inProgress.isEmpty,
+                        onStart: { start(from: $0) },
+                        onOpen: { path.append(WorkoutRoute.template($0)) },
+                        onShowAll: { path.append(WorkoutRoute.templates) },
+                        onCreate: { creatingTemplate = true }
+                    )
                 }
 
                 Section {
@@ -71,6 +84,7 @@ struct WorkoutsScreen: View {
             .navigationDestination(for: WorkoutRoute.self) { route in
                 destination(for: route)
             }
+            .newTemplateAlert(isPresented: $creatingTemplate) { createTemplate(named: $0) }
             .confirmationDialog(
                 "¿Eliminar este entrenamiento?",
                 isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
@@ -122,12 +136,25 @@ struct WorkoutsScreen: View {
             WorkoutDetailView(
                 workout: workout,
                 canRepeat: inProgress.isEmpty,
-                onRepeat: { start(template: workout) }
+                onRepeat: { start(template: workout) },
+                onSaveAsTemplate: { saveAsTemplate(workout) }
             )
         case .exercise(let definition):
             ExerciseHistoryView(definition: definition, linksToWorkouts: true)
         case .comparison(let baseline, let current):
             WorkoutComparisonView(baseline: baseline, current: current)
+        case .templates:
+            TemplateListView(
+                canStart: inProgress.isEmpty,
+                onStart: { start(from: $0) },
+                onCreate: { createTemplate(named: $0) }
+            )
+        case .template(let template):
+            TemplateEditorView(
+                template: template,
+                canStart: inProgress.isEmpty,
+                onStart: { start(from: $0) }
+            )
         }
     }
 
@@ -140,6 +167,33 @@ struct WorkoutsScreen: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func start(from template: WorkoutTemplate) {
+        do {
+            let workout = try Workout.start(in: context, from: template)
+            try context.save()
+            path = NavigationPath()
+            presented = workout
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Crea la plantilla y abre su editor para añadir los ejercicios.
+    private func createTemplate(named name: String) {
+        let template = WorkoutTemplate(name: ExerciseName.clean(name))
+        context.insert(template)
+        context.saveNow()
+        path.append(WorkoutRoute.template(template))
+    }
+
+    /// Plantilla con los ejercicios y series de un entrenamiento terminado; abre su editor
+    /// para cambiarle el nombre o ajustarla.
+    private func saveAsTemplate(_ workout: Workout) {
+        let template = WorkoutTemplate.make(from: workout, in: context)
+        context.saveNow()
+        path.append(WorkoutRoute.template(template))
     }
 
     private func delete(_ workout: Workout) {

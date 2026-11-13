@@ -28,4 +28,20 @@ public enum SetSuggestion {
         }
         return SetSample(weightKg: last.weightKg, reps: last.reps, effort: .normal, side: side)
     }
+
+    /// Series que faltan para llegar a `target` (plan de una plantilla), rellenadas igual
+    /// que si se fueran añadiendo una a una con `next(current:previous:)`.
+    ///
+    /// Vacío si ya se han hecho `target` series o más.
+    public static func remaining(current: [SetSample], previous: [SetSample], target: Int) -> [SetSample] {
+        guard target > current.count else { return [] }
+        var done = current
+        var planned: [SetSample] = []
+        for _ in current.count..<target {
+            let suggestion = next(current: done, previous: previous)
+            planned.append(suggestion)
+            done.append(suggestion)
+        }
+        return planned
+    }
 }

@@ -78,6 +78,8 @@ final class WorkoutSessionTests: XCTestCase {
         XCTAssertEqual(workout.orderedExercises.map(\.name), ["Curl femoral", "Sentadilla", "Prensa"])
         XCTAssertTrue(workout.orderedExercises.allSatisfy { $0.sets.isEmpty })
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseDefinition>()), 3, "Reutiliza el catálogo")
+        let targets = try workout.setTargets(in: context)
+        XCTAssertEqual(workout.orderedExercises.map { targets[$0.id] }, [1, 1, 1], "Prevé las series que se hicieron")
     }
 
     // MARK: Historial por ejercicio

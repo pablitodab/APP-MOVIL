@@ -8,6 +8,7 @@ struct WorkoutDetailView: View {
     let workout: Workout
     let canRepeat: Bool
     let onRepeat: () -> Void
+    let onSaveAsTemplate: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -44,6 +45,12 @@ struct WorkoutDetailView: View {
                     Label("Repetir este entrenamiento", systemImage: "arrow.clockwise")
                 }
                 .disabled(!canRepeat)
+                Button {
+                    onSaveAsTemplate()
+                } label: {
+                    Label("Guardar como plantilla", systemImage: "list.bullet.clipboard")
+                }
+                .disabled(workout.exercises.isEmpty)
             } footer: {
                 if canRepeat {
                     Text("Repetir empieza un entrenamiento nuevo con los mismos ejercicios en el mismo orden; las series se rellenan con lo que hiciste la última vez.")
