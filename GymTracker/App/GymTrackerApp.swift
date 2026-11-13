@@ -10,9 +10,9 @@ struct GymTrackerApp: App {
 
     init() {
         persistence = Result { try GymPersistence.makeContainer() }
-        // La integración real con HealthKit sustituirá a este servicio.
-        // Mientras tanto, la app no muestra datos de Salud inventados.
-        healthService = UnavailableHealthService()
+        // HealthKit si el dispositivo tiene Salud; si no, un servicio que siempre
+        // falla con `.unavailable` (nunca datos inventados).
+        healthService = HealthKitService.makeDefault()
     }
 
     var body: some Scene {

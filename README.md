@@ -11,7 +11,8 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 ## Estado
 
 Fase 1 (fundación): estructura, modelo de datos, cálculo de calorías, contrato de Salud y las dos pestañas vacías.
-Pendiente: registro de entrenamientos, historiales, calendario/estadísticas e integración real con HealthKit.
+Integración real con HealthKit (`GymTracker/Health/HealthKitService.swift`): lectura de pasos, distancia, minutos de ejercicio, kcal activas/basales y peso; guardado de entrenos de fuerza.
+Pendiente: registro de entrenamientos, historiales y calendario/estadísticas.
 
 ## Instalar en el iPhone desde Windows (Sideloadly)
 
@@ -57,7 +58,7 @@ GymTracker/                    App iOS (solo interfaz e integración con el sist
   App/                         Punto de entrada, TabView, inyección de dependencias
   Features/Stats/              Pestaña "Progreso": calendario, racha y estadísticas de Salud
   Features/Workouts/           Pestaña "Entrenamientos": registro e historiales
-  Health/                      (pendiente) HealthKitService: implementación real de HealthService
+  Health/                      HealthKitService: implementación real de HealthService
   Shared/                      Componentes y datos de preview compartidos
   Resources/                   Assets (icono, color de acento)
   SupportingFiles/             Info.plist y entitlements de HealthKit
@@ -75,7 +76,7 @@ scripts/                       IPA, prueba de humo en simulador y elección de s
 
 Reglas:
 
-- **Las vistas no hablan con HealthKit.** Usan `@Environment(\.healthService)`, que es un `any HealthService`. Hoy la app inyecta `UnavailableHealthService` (no muestra datos inventados); la integración real lo sustituirá en `GymTrackerApp`.
+- **Las vistas no hablan con HealthKit.** Usan `@Environment(\.healthService)`, que es un `any HealthService`. `GymTrackerApp` inyecta `HealthKitService.makeDefault()`: HealthKit si el dispositivo tiene Salud y `UnavailableHealthService` si no (nunca datos inventados).
 - **La lógica que no necesita SwiftUI/HealthKit va en GymKit** (GymCore si tampoco necesita SwiftData) y se testea con `swift test`. La app solo contiene vistas e integración con el sistema.
 - Los tipos de GymData son `public`; al añadir propiedades o métodos que use la app, márcalos `public`.
 - **Un único calendario:** `GymCalendar.make()` (lunes primero). Todo lo que agrupe por día o semana lo usa.
@@ -120,7 +121,17 @@ protocol HealthService: Sendable {
 `HealthDaySummary`: pasos, distancia andando/corriendo (m), minutos de ejercicio, kcal activas y basales.
 `Workout.healthRecord` produce el `HealthWorkoutRecord` de un entrenamiento terminado; tras guardarlo, asigna el UUID devuelto a `workout.healthKitWorkoutID`.
 
-Implementaciones: `UnavailableHealthService` (por defecto, siempre lanza `.unavailable`), `InMemoryHealthService` (tests y previews) y, pendiente, `HealthKitService` en `GymTracker/Health/`.
+Implementaciones: `HealthKitService` (app real, `GymTracker/Health/`), `UnavailableHealthService` (dispositivo sin Salud; siempre lanza `.unavailable`) e `InMemoryHealthService` (tests y previews).
+
+#### `HealthKitService` (lo que hay que saber al consumirlo)
+
+- **Permisos automáticos.** Cada método pide los permisos si aún no se han pedido; no hace falta llamar antes a `requestAuthorization()`. La hoja de Salud aparece la primera vez que una vista lee o guarda algo.
+- **Lectura denegada = ceros.** Por privacidad, HealthKit no dice si el usuario denegó la lectura: las consultas vuelven vacías y `dailySummaries` devuelve ceros. Conviene que la vista indique "Sin datos (revisa permisos en Ajustes > Salud)" cuando todo es cero, en vez de un error.
+- **Escritura denegada sí se detecta.** `saveWorkout` lanza `.notAuthorized`; el mensaje ya explica dónde cambiarlo.
+- **Sumas diarias** con `HKStatisticsCollectionQuery` (`.cumulativeSum`), que elimina duplicados entre iPhone y Apple Watch. Para totales semanales o mensuales basta sumar los días: es exacto para magnitudes acumulativas.
+- **Entreno guardado** como `HKWorkout` `.traditionalStrengthTraining`, interior, con inicio/fin reales y una muestra de energía activa con las kcal estimadas (solo si hay estimación y permiso de escritura de energía; si no, se guarda sin calorías). Lleva `HKMetadataKeyExternalUUID` = id del `Workout`: si se reintenta un guardado que ya se completó, devuelve el mismo UUID en lugar de duplicarlo.
+- **iPhone bloqueado**: Salud cifra sus datos y las lecturas fallan con un mensaje ("Desbloquea el iPhone…").
+- **Sin Apple Watch**, *minutos de ejercicio* y *energía basal* normalmente quedan a cero: los genera el reloj, no el iPhone. Pasos, distancia y energía activa sí los registra el iPhone. Los entrenos guardados por la app suman a la energía activa del día, pero no a los minutos de ejercicio. Para "tiempo de entrenamiento" es más fiable sumar la duración de los `Workout` propios.
 
 ## Reparto del trabajo
 
