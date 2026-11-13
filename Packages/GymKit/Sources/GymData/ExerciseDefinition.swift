@@ -32,10 +32,12 @@ public final class ExerciseDefinition {
 
 public enum ExerciseDefinitionError: Error, Equatable, LocalizedError {
     case emptyName
+    case duplicateName(String)
 
     public var errorDescription: String? {
         switch self {
         case .emptyName: return "El nombre del ejercicio no puede estar vacío."
+        case .duplicateName(let name): return "Ya existe un ejercicio llamado «\(name)»."
         }
     }
 }

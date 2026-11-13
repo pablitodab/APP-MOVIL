@@ -10,8 +10,9 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 
 ## Estado
 
-Fase 1 (fundación): estructura, modelo de datos, cálculo de calorías, contrato de Salud y las dos pestañas vacías.
-Pendiente: registro de entrenamientos, historiales, calendario/estadísticas e integración real con HealthKit.
+- Fase 1 (fundación): estructura, modelo de datos, cálculo de calorías, contrato de Salud.
+- Pestaña **Entrenamientos**: registro en vivo, cierre con calorías y envío a Salud, historial de entrenamientos, historial por ejercicio y comparaciones (ver abajo).
+- Pendiente en otras partes: calendario/estadísticas e integración real con HealthKit.
 
 ## Instalar en el iPhone desde Windows (Sideloadly)
 
@@ -66,6 +67,7 @@ Packages/GymKit/               Paquete Swift local con todo lo testeable sin sim
     Domain/                    SetEffort, BodySide, normalización de nombres, reordenación
     Calories/                  Intensidad (MET) y CalorieCalculator
     Calendar/                  GymCalendar (semanas de lunes a domingo)
+    Analysis/                  Estadísticas por sesión, 1RM, récords, comparación y sugerencia de series
     Health/                    Protocolo HealthService, modelos y servicios sin HealthKit
   Sources/GymData/             Modelos SwiftData, esquema versionado y contenedor
   Tests/                       GymCoreTests y GymDataTests
@@ -121,6 +123,20 @@ protocol HealthService: Sendable {
 `Workout.healthRecord` produce el `HealthWorkoutRecord` de un entrenamiento terminado; tras guardarlo, asigna el UUID devuelto a `workout.healthKitWorkoutID`.
 
 Implementaciones: `UnavailableHealthService` (por defecto, siempre lanza `.unavailable`), `InMemoryHealthService` (tests y previews) y, pendiente, `HealthKitService` en `GymTracker/Health/`.
+
+## Pestaña Entrenamientos
+
+Código en `GymTracker/Features/Workouts/` (`Logging/` registro en vivo, `History/` historiales y comparación, `Components/` piezas compartidas).
+
+- **Empezar**: un toque. Solo puede haber un entrenamiento en curso; se puede minimizar o cerrar la app y continuar después (todo se guarda al momento).
+- **Ejercicios**: se buscan o crean escribiendo el nombre (el catálogo evita duplicados por mayúsculas/tildes). Se reordenan arrastrando en modo *Ordenar* (menú ⋯ o mantener pulsado el nombre) y se quitan desde el mismo menú.
+- **Series**: peso, repeticiones, esfuerzo (normal, calentamiento, fallo, dropset) y lado (ninguno, izquierda, derecha). Deslizar a la izquierda borra la serie. *Añadir serie* rellena con la serie de la misma posición la última vez que hiciste el ejercicio o, si no hay, copia la última de hoy (alternando lado en unilaterales). Bajo cada ejercicio se ve lo que hiciste la última vez.
+- **Terminar**: ajusta inicio/fin, intensidad y peso corporal (de Salud si hay permiso, si no el último usado). Muestra las calorías activas estimadas, guarda en local y después llama a `HealthService.saveWorkout`. Si Salud falla, el entrenamiento queda guardado, se avisa y se puede reintentar desde su detalle.
+- **Historial de entrenamientos**: agrupado por mes, con búsqueda por nombre o ejercicio. Detalle con series, volumen, mejor serie y 1RM estimado por ejercicio; editar series, repetir el entrenamiento (mismos ejercicios y orden) y eliminar (no borra el registro de Salud).
+- **Historial por ejercicio**: récords, gráfica de progresión (peso máximo, 1RM estimado o volumen), comparación entre dos sesiones y lista de sesiones. Se puede renombrar el ejercicio sin partir su historial.
+- **Comparar entrenamientos**: elige A y B; por defecto A es el anterior con más ejercicios en común. Diferencias de duración, calorías, volumen, series y repeticiones, y por ejercicio.
+
+Definiciones (en `GymCore/Analysis`, con tests): *serie efectiva* = no es calentamiento y tiene repeticiones; *volumen* = kg × reps de las efectivas; *mejor serie* = la efectiva más pesada (a igual peso, más reps); *1RM estimado* = Epley, solo con 1–12 reps.
 
 ## Reparto del trabajo
 
