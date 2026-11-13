@@ -46,7 +46,17 @@ xcrun simctl spawn "$DEVICE_ID" log show --start "$LAUNCH_TIME" --style compact 
 echo "Errores/fallos registrados por la app: $(grep -c "GymTracker" "$OUT/app-errors.log" || true)"
 head -n 40 "$OUT/app-errors.log"
 
-if ! xcrun simctl spawn "$DEVICE_ID" launchctl list | grep -q "UIKitApplication:$BUNDLE_ID"; then
+# Volcar a fichero antes de buscar: con `grep -q` en tubería, launchctl recibe SIGPIPE
+# y `pipefail` daba un falso "la app no está en ejecución".
+xcrun simctl spawn "$DEVICE_ID" launchctl list > "$OUT/launchctl.txt"
+CRASHES="$(find "$HOME/Library/Logs/DiagnosticReports" -name "GymTracker*" -newer "$OUT/xcodebuild-sim.log" 2>/dev/null || true)"
+if [[ -n "$CRASHES" ]]; then
+  echo "Informe de fallo de GymTracker:" >&2
+  echo "$CRASHES" >&2
+  cp $CRASHES "$OUT/" 2>/dev/null || true
+  exit 1
+fi
+if ! grep -q "UIKitApplication:$BUNDLE_ID" "$OUT/launchctl.txt"; then
   echo "La app no sigue en ejecución 15 s después de abrirla (¿crash al arrancar?)." >&2
   exit 1
 fi
