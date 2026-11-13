@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Un día sin muestras se representa con ceros: Salud no distingue entre
 /// "no hubo actividad" y "no hay datos", y la app tampoco lo inventa.
-public struct HealthDaySummary: Equatable, Identifiable, Sendable {
+public struct HealthDaySummary: Codable, Equatable, Identifiable, Sendable {
     /// Inicio del día según `GymCalendar`.
     public let day: Date
     public var steps: Double
@@ -38,7 +38,7 @@ public struct HealthDaySummary: Equatable, Identifiable, Sendable {
 
 /// Entrenamiento a guardar en Salud. Independiente de SwiftData para que la capa
 /// de Salud no conozca el modelo de persistencia.
-public struct HealthWorkoutRecord: Equatable, Sendable {
+public struct HealthWorkoutRecord: Codable, Equatable, Sendable {
     /// Identificador del entrenamiento en la app; se guarda como metadato para
     /// poder detectar duplicados.
     public let workoutID: UUID
@@ -71,6 +71,11 @@ public enum HealthServiceError: Error, Equatable, LocalizedError, Sendable {
     /// La app se instaló con una firma cuyo perfil no incluye HealthKit: Salud no
     /// puede mostrar la hoja de permisos. Se arregla reinstalando, no en Ajustes.
     case missingEntitlement
+    /// Modo Atajos: el entrenamiento quedó en cola y lo registra en Salud el atajo
+    /// «GymTracker a Salud». No es un fallo: la vista debe lanzar el atajo.
+    case pendingShortcut
+    /// Modo Atajos: todavía no ha llegado ningún dato del atajo «Salud a GymTracker».
+    case shortcutsNotSynced
     case invalidDateRange
     case invalidWorkout
     /// Error del sistema; se conserva su descripción para mostrarla.
@@ -84,6 +89,10 @@ public enum HealthServiceError: Error, Equatable, LocalizedError, Sendable {
             return "No hay permiso para acceder a Salud. Revísalo en Ajustes > Salud > Acceso a datos y dispositivos."
         case .missingEntitlement:
             return "Esta instalación no tiene el permiso de HealthKit en su firma, así que Salud no puede pedir acceso. No se arregla en Ajustes: hay que reinstalar con una firma que incluya HealthKit. Detalles en Progreso > Diagnóstico de Salud."
+        case .pendingShortcut:
+            return "El entrenamiento se registrará en Salud con el atajo «GymTracker a Salud»."
+        case .shortcutsNotSynced:
+            return "Aún no han llegado datos de Salud. Configura y ejecuta el atajo «Salud a GymTracker» (Progreso > Diagnóstico de Salud)."
         case .invalidDateRange:
             return "El rango de fechas no es válido."
         case .invalidWorkout:

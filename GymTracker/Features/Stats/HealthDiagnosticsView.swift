@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 import HealthKit
 import GymCore
@@ -11,12 +12,16 @@ import GymCore
 /// en Fuentes, y desde fuera parece un "permiso denegado".
 struct HealthDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var report = HealthDiagnosticsReport()
 
     var body: some View {
         NavigationStack {
             Form {
                 verdictSection
+                if report.mode == .shortcuts {
+                    shortcutsSection
+                }
                 signingSection
                 healthSection
 
@@ -53,6 +58,9 @@ struct HealthDiagnosticsView: View {
                 }
             }
             .task { await report.refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: .healthBridgeDidChange)) { _ in
+                Task { await report.refresh() }
+            }
         }
     }
 
@@ -106,6 +114,37 @@ struct HealthDiagnosticsView: View {
         }
     }
 
+    private var shortcutsSection: some View {
+        Section {
+            LabeledContent("Últimos datos recibidos") {
+                if let last = report.bridge?.lastImportAt {
+                    Text(last, format: .relative(presentation: .named))
+                } else {
+                    Text("Nunca").foregroundStyle(.orange)
+                }
+            }
+            LabeledContent("Días con datos", value: "\(report.bridge?.days.count ?? 0)")
+            if let weight = report.bridge?.bodyMass {
+                LabeledContent("Peso", value: "\(weight.kg.formatted(.number.precision(.fractionLength(0...1)))) kg")
+            }
+            LabeledContent("Entrenamientos pendientes de enviar", value: "\(report.bridge?.pendingWorkouts.count ?? 0)")
+            Button {
+                openURL(HealthShortcuts.runURL(HealthShortcuts.importName))
+            } label: {
+                Label("Ejecutar «\(HealthShortcuts.importName)»", systemImage: "arrow.down.heart")
+            }
+            Button {
+                openURL(HealthShortcuts.runURL(HealthShortcuts.exportName))
+            } label: {
+                Label("Ejecutar «\(HealthShortcuts.exportName)»", systemImage: "arrow.up.heart")
+            }
+        } header: {
+            Text("Salud vía Atajos")
+        } footer: {
+            Text("Los atajos deben llamarse exactamente «\(HealthShortcuts.importName)» y «\(HealthShortcuts.exportName)». Pasos en el README del proyecto, sección \"Salud con Atajos\".")
+        }
+    }
+
     private var healthSection: some View {
         Section("HealthKit") {
             LabeledContent("Salud disponible", value: report.healthDataAvailable ? "Sí" : "No")
@@ -127,6 +166,8 @@ final class HealthDiagnosticsReport {
 
     let bundleIdentifier = Bundle.main.bundleIdentifier ?? "—"
     let healthDataAvailable = HKHealthStore.isHealthDataAvailable()
+    let mode = AppDependencies.shared.healthMode
+    private(set) var bridge: HealthBridgeState? = nil
     private(set) var profile: Result<ProvisioningProfile?, Error>? = nil
     private(set) var requestStatus: String? = nil
     private(set) var workoutSharing: String? = nil
@@ -136,7 +177,8 @@ final class HealthDiagnosticsReport {
     private let store = HKHealthStore()
 
     func refresh() async {
-        profile = Result { try Self.loadEmbeddedProfile() }
+        profile = Result { try ProvisioningProfile.embedded() }
+        bridge = await AppDependencies.shared.bridgeStore.snapshot()
         guard healthDataAvailable else {
             requestStatus = "Salud no disponible"
             workoutSharing = "—"
@@ -169,8 +211,14 @@ final class HealthDiagnosticsReport {
     var verdict: Verdict? {
         guard case .success(let loaded) = profile else { return nil }
         if let loaded, !loaded.grantsHealthKit {
+            if bridge?.lastImportAt != nil {
+                return Verdict(
+                    message: "La firma no incluye HealthKit (Apple ID gratuito), así que la app usa Salud a través de Atajos, y ya está recibiendo datos.",
+                    isProblem: false
+                )
+            }
             return Verdict(
-                message: "El perfil con el que se firmó la app no incluye HealthKit. iOS se lo quita a la app y Salud no puede pedir permisos ni listarla en Fuentes. Hay que reinstalar con una firma que incluya HealthKit.",
+                message: "La firma no incluye HealthKit (Apple ID gratuito), así que la app usa Salud a través de Atajos. Falta crear los atajos «\(HealthShortcuts.importName)» y «\(HealthShortcuts.exportName)» y ejecutarlos una vez.",
                 isProblem: true
             )
         }
@@ -205,6 +253,10 @@ final class HealthDiagnosticsReport {
         case .none:
             break
         }
+        lines.append("Modo: \(mode == .shortcuts ? "Atajos" : mode == .healthKit ? "HealthKit" : "sin Salud")")
+        if let bridge {
+            lines.append("Atajos: último envío \(bridge.lastImportAt?.formatted() ?? "nunca") · \(bridge.days.count) días · peso \(bridge.bodyMass.map { "\($0.kg) kg" } ?? "—") · \(bridge.pendingWorkouts.count) entrenos pendientes")
+        }
         lines.append("Salud disponible: \(healthDataAvailable ? "sí" : "no")")
         lines.append("Estado de la solicitud: \(requestStatus ?? "—")")
         lines.append("Escritura de entrenamientos: \(workoutSharing ?? "—")")
@@ -215,13 +267,6 @@ final class HealthDiagnosticsReport {
     }
 
     // MARK: Utilidades
-
-    private static func loadEmbeddedProfile() throws -> ProvisioningProfile? {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision") else {
-            return nil
-        }
-        return try ProvisioningProfile.parse(Data(contentsOf: url))
-    }
 
     private static func describe(_ error: Error) -> String {
         let nsError = error as NSError

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import SwiftData
 import GymCore
 import GymData
@@ -13,6 +14,8 @@ struct StatsScreen: View {
     private var finishedWorkouts: [Workout]
 
     @Environment(\.healthService) private var healthService
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var health = HealthStatsLoader()
     @State private var range: StatsRange = .week
     @State private var offset = 0
@@ -46,6 +49,15 @@ struct StatsScreen: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Progreso")
             .toolbar {
+                if healthService is ShortcutsHealthService {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            openURL(HealthShortcuts.runURL(HealthShortcuts.importName))
+                        } label: {
+                            Label("Actualizar desde Salud", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showsDiagnostics = true
@@ -57,11 +69,22 @@ struct StatsScreen: View {
             .sheet(isPresented: $showsDiagnostics) {
                 HealthDiagnosticsView()
             }
-            .refreshable {
-                guard let period = StatsPeriod(range: range, offset: offset, now: .now, calendar: calendar) else { return }
-                await health.load(period: period, service: healthService, calendar: calendar)
+            .refreshable { await reloadHealth() }
+            // Modo Atajos: los datos llegan cuando el atajo termina (con la app abierta o al volver a ella).
+            .onReceive(NotificationCenter.default.publisher(for: .healthBridgeDidChange)) { _ in
+                Task { await reloadHealth() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, healthService is ShortcutsHealthService {
+                    Task { await reloadHealth() }
+                }
             }
         }
+    }
+
+    private func reloadHealth() async {
+        guard let period = StatsPeriod(range: range, offset: offset, now: .now, calendar: calendar) else { return }
+        await health.load(period: period, service: healthService, calendar: calendar)
     }
 
     private var workoutSpans: [WorkoutSpan] {

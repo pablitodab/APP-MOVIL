@@ -16,6 +16,7 @@ struct FinishWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(\.healthService) private var healthService
+    @Environment(\.openURL) private var openURL
 
     @State private var start: Date
     @State private var end = Date.now
@@ -54,7 +55,9 @@ struct FinishWorkoutView: View {
                         .disabled(!healthService.isHealthDataAvailable)
                 } footer: {
                     if healthService.isHealthDataAvailable {
-                        Text("Se registra como entrenamiento de fuerza con las calorías activas estimadas.")
+                        Text(healthService is ShortcutsHealthService
+                             ? "Se abrirá el atajo «\(HealthShortcuts.exportName)», que lo registra en Salud como entrenamiento de fuerza y vuelve aquí."
+                             : "Se registra como entrenamiento de fuerza con las calorías activas estimadas.")
                     } else {
                         Text("Salud no está disponible en este dispositivo o versión de la app. El entrenamiento se guarda igualmente en el historial.")
                     }
@@ -201,6 +204,9 @@ struct FinishWorkoutView: View {
         if saveToHealth && healthService.isHealthDataAvailable {
             do {
                 try await workout.syncToHealth(using: healthService, context: context)
+            } catch HealthServiceError.pendingShortcut {
+                // Modo Atajos: queda en cola y el atajo lo registra en Salud y vuelve a la app.
+                openURL(HealthShortcuts.runURL(HealthShortcuts.exportName))
             } catch {
                 healthWarning = error.localizedDescription
                 return

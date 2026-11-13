@@ -25,12 +25,6 @@ final class HealthKitService: HealthService, @unchecked Sendable {
         self.store = store
     }
 
-    /// Servicio a inyectar en la app: HealthKit si el dispositivo tiene Salud;
-    /// si no (p. ej. algunos iPad), uno que falla siempre con `.unavailable`.
-    static func makeDefault() -> any HealthService {
-        HKHealthStore.isHealthDataAvailable() ? HealthKitService() : UnavailableHealthService()
-    }
-
     var isHealthDataAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
     // MARK: - Permisos

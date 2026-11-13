@@ -36,6 +36,51 @@ Limitaciones de una cuenta de Apple gratuita:
 
 Por qué el IPA lleva una firma ad-hoc: Sideloadly toma los *entitlements* (permisos como HealthKit) de la firma existente. Un IPA sin ninguna firma perdería el permiso de Salud. `scripts/build-ipa.sh` firma ad-hoc con `GymTracker.entitlements` y el CI falla si el entitlement de HealthKit no queda incrustado.
 
+## Salud con Atajos (Apple ID gratuito)
+
+Con Sideloadly y un Apple ID gratuito la app no puede usar HealthKit (ver arriba), pero la app **Atajos** sí lee y escribe en Salud. La app lo detecta sola (el perfil de la firma no tiene HealthKit) y cambia a este modo:
+
+- **Leer:** el atajo «Salud a GymTracker» busca en Salud los totales por día y se los pasa a la app con la acción *Guardar datos de Salud en GymTracker*. Se guardan en `Application Support/HealthBridge.json` (`HealthBridgeStore`). Antes del primer envío, Progreso dice que falta el atajo en vez de mostrar ceros.
+- **Escribir:** al terminar un entrenamiento con "Guardar en Salud", la app lo deja en cola y abre el atajo «GymTracker a Salud», que lo registra con *Registrar entrenamiento*, lo marca con *Marcar entrenamiento como registrado en Salud* y vuelve a la app.
+- Botones para ejecutar los dos atajos y el estado del puente (último envío, días, pendientes) en *Progreso → estetoscopio*. En Progreso, el botón de flechas ejecuta «Salud a GymTracker».
+
+Los nombres de los atajos tienen que ser **exactamente** «Salud a GymTracker» y «GymTracker a Salud» (`HealthShortcuts`). Los nombres de las acciones de Atajos pueden variar un poco según la versión de iOS.
+
+### Atajo 1: «Salud a GymTracker»
+
+Para cada dato, cuatro acciones (crea el primer bloque y duplícalo):
+
+1. **Buscar muestras de salud** donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. *Agrupar por*: **Día**. *Ordenar por*: Fecha de inicio.
+2. **Obtener detalles de la muestra de salud** → **Valor** (de *Muestras de salud*).
+3. **Obtener detalles de la muestra de salud** → **Fecha de inicio** (de *Muestras de salud*, no del paso 2).
+4. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos, *Valores*: el resultado del paso 2, *Fechas*: el resultado del paso 3.
+
+Repite el bloque con estos tipos y unidades (la unidad se elige en *Buscar muestras de salud*):
+
+| Tipo en Salud | Unidad | Dato en GymTracker |
+| --- | --- | --- |
+| Pasos | recuento | Pasos |
+| Distancia andando + corriendo | km | Distancia (km) |
+| Energía activa | kcal | Calorías activas (kcal) |
+| Energía en reposo | kcal | Calorías en reposo (kcal) |
+| Minutos de ejercicio | min | Minutos de ejercicio |
+| Peso (opcional) | kg | Peso (kg); aquí sin agrupar, ordenado por fecha de inicio *Más reciente primero* y *Limitar* a 1 |
+
+Si el atajo tarda mucho, cambia "el último año" por "los últimos 35 días": lo ya importado se conserva.
+
+### Atajo 2: «GymTracker a Salud»
+
+1. **Entrenamientos pendientes para Salud** (de GymTracker).
+2. **Repetir con cada elemento** de la lista anterior:
+   - **Registrar entrenamiento**: *Tipo* "Fuerza tradicional" (o el de fuerza que aparezca), *Fecha de inicio* = Elemento repetido → Inicio, *Duración* = Elemento repetido → Duración, *Calorías* = Elemento repetido → Calorías activas, *Distancia* = **0** (si se deja vacía, la acción falla).
+   - **Marcar entrenamiento como registrado en Salud** con *Elemento repetido*.
+
+### Automatización (recomendada)
+
+*Atajos → Automatización → Nueva automatización → App → GymTracker → Se abre → Ejecutar inmediatamente →* «Salud a GymTracker». Así, cada vez que abres la app se actualizan los datos.
+
+La primera vez que se ejecuten, Atajos pedirá permiso para leer y escribir en Salud: acéptalo. Compara una vez los pasos de un día con los de la app Salud: si tienes iPhone y Apple Watch y no coinciden, avisa.
+
 ## Salud con cuenta de pago: TestFlight
 
 Con un Apple ID gratuito, ninguna herramienta de sideload (Sideloadly, AltStore, SideStore) consigue un perfil con HealthKit: la app se instala, pero Salud responde "Missing com.apple.developer.healthkit entitlement". Con el Apple Developer Program (de pago) la app se sube a TestFlight desde GitHub Actions y se instala desde la app TestFlight, sin PC y sin reinstalar cada 7 días (cada build dura 90 días).
@@ -79,6 +124,7 @@ GymTracker/                    App iOS (solo interfaz e integración con el sist
   Features/Stats/              Pestaña "Progreso": calendario, racha y estadísticas de Salud
   Features/Workouts/           Pestaña "Entrenamientos": registro e historiales
   Health/                      HealthKitService: implementación real de HealthService
+  Shortcuts/                   Acciones de Atajos (App Intents) del puente con Salud sin HealthKit
   Shared/                      Componentes y datos de preview compartidos
   Resources/                   Assets (icono, color de acento)
   SupportingFiles/             Info.plist y entitlements de HealthKit
@@ -98,7 +144,7 @@ scripts/                       IPA, prueba de humo en simulador y elección de s
 
 Reglas:
 
-- **Las vistas no hablan con HealthKit.** Usan `@Environment(\.healthService)`, que es un `any HealthService`. `GymTrackerApp` inyecta `HealthKitService.makeDefault()`: HealthKit si el dispositivo tiene Salud y `UnavailableHealthService` si no (nunca datos inventados).
+- **Las vistas no hablan con HealthKit.** Usan `@Environment(\.healthService)`, que es un `any HealthService`. `AppDependencies` elige la implementación al arrancar: `HealthKitService` si la firma incluye HealthKit (o no hay perfil embebido: simulador, TestFlight), `ShortcutsHealthService` si el perfil no lo incluye (Sideloadly con Apple ID gratuito) y `UnavailableHealthService` si el dispositivo no tiene Salud (nunca datos inventados).
 - **La lógica que no necesita SwiftUI/HealthKit va en GymKit** (GymCore si tampoco necesita SwiftData) y se testea con `swift test`. La app solo contiene vistas e integración con el sistema.
 - Los tipos de GymData son `public`; al añadir propiedades o métodos que use la app, márcalos `public`.
 - **Un único calendario:** `GymCalendar.make()` (lunes primero). Todo lo que agrupe por día o semana lo usa.

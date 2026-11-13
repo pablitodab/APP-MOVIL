@@ -1,0 +1,200 @@
+import AppIntents
+import Foundation
+import SwiftData
+import GymCore
+import GymData
+
+// Acciones que GymTracker ofrece en la app Atajos para hacer de puente con Salud
+// cuando la firma de la instalación no incluye HealthKit (ver `ShortcutsHealthService`).
+
+// MARK: - Entrenamiento pendiente
+
+/// Entrenamiento que el atajo «GymTracker a Salud» debe registrar.
+struct PendingHealthWorkout: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Entrenamiento para Salud"
+    static let defaultQuery = PendingHealthWorkoutQuery()
+
+    let id: UUID
+
+    @Property(title: "Inicio")
+    var start: Date
+
+    @Property(title: "Fin")
+    var end: Date
+
+    @Property(title: "Duración")
+    var duration: Measurement<UnitDuration>
+
+    @Property(title: "Minutos")
+    var minutes: Double
+
+    @Property(title: "Calorías activas")
+    var activeEnergy: Measurement<UnitEnergy>
+
+    @Property(title: "Kcal")
+    var kcal: Double
+
+    init(record: HealthWorkoutRecord) {
+        id = record.workoutID
+        let minutes = (record.end.timeIntervalSince(record.start) / 60).rounded()
+        // Sin peso corporal no hay estimación: se registra sin calorías (0), nunca inventadas.
+        let kcal = (record.activeEnergyKcal ?? 0).rounded()
+        self.start = record.start
+        self.end = record.end
+        self.minutes = minutes
+        self.duration = Measurement(value: minutes, unit: .minutes)
+        self.kcal = kcal
+        self.activeEnergy = Measurement(value: kcal, unit: .kilocalories)
+    }
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(
+            title: "\(start.formatted(date: .abbreviated, time: .shortened))",
+            subtitle: "\(Int(minutes)) min · \(Int(kcal)) kcal"
+        )
+    }
+}
+
+struct PendingHealthWorkoutQuery: EntityQuery {
+    func entities(for identifiers: [PendingHealthWorkout.ID]) async throws -> [PendingHealthWorkout] {
+        let wanted = Set(identifiers)
+        return await AppDependencies.shared.bridgeStore.pendingWorkouts()
+            .filter { wanted.contains($0.workoutID) }
+            .map(PendingHealthWorkout.init(record:))
+    }
+
+    func suggestedEntities() async throws -> [PendingHealthWorkout] {
+        await AppDependencies.shared.bridgeStore.pendingWorkouts().map(PendingHealthWorkout.init(record:))
+    }
+}
+
+// MARK: - App → Salud
+
+struct GetPendingHealthWorkoutsIntent: AppIntent {
+    static let title: LocalizedStringResource = "Entrenamientos pendientes para Salud"
+    static let description = IntentDescription(
+        "Devuelve los entrenamientos terminados en GymTracker que aún no están en Salud. Úsalo con «Repetir con cada elemento» y «Registrar entrenamiento».",
+        categoryName: "Salud"
+    )
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<[PendingHealthWorkout]> {
+        let dependencies = AppDependencies.shared
+        let pending = await dependencies.bridgeStore.pendingWorkouts()
+
+        // Limpia la cola: entrenamientos borrados de la app o ya registrados.
+        var stale = Set<UUID>()
+        if case .success(let container) = dependencies.persistence {
+            for record in pending {
+                let workout = try fetchWorkout(record.workoutID, in: container.mainContext)
+                if workout == nil || workout?.isSyncedToHealth == true {
+                    stale.insert(record.workoutID)
+                }
+            }
+        }
+        try await dependencies.bridgeStore.removePending(stale)
+
+        let result = pending
+            .filter { !stale.contains($0.workoutID) }
+            .map(PendingHealthWorkout.init(record:))
+        return .result(value: result)
+    }
+}
+
+struct MarkWorkoutLoggedInHealthIntent: AppIntent {
+    static let title: LocalizedStringResource = "Marcar entrenamiento como registrado en Salud"
+    static let description = IntentDescription(
+        "Ponlo justo después de «Registrar entrenamiento» para que GymTracker no lo vuelva a enviar.",
+        categoryName: "Salud"
+    )
+
+    @Parameter(title: "Entrenamiento")
+    var workout: PendingHealthWorkout
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Marcar \(\.$workout) como registrado en Salud")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let dependencies = AppDependencies.shared
+        if case .success(let container) = dependencies.persistence,
+           let stored = try fetchWorkout(workout.id, in: container.mainContext),
+           stored.healthKitWorkoutID == nil {
+            // Atajos no devuelve el UUID del registro de Salud: se marca con el id del
+            // propio entrenamiento, que solo sirve para saber que ya está en Salud.
+            stored.healthKitWorkoutID = stored.id
+            try container.mainContext.save()
+        }
+        try await dependencies.bridgeStore.removePending([workout.id])
+        NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
+        return .result()
+    }
+}
+
+@MainActor
+private func fetchWorkout(_ id: UUID, in context: ModelContext) throws -> Workout? {
+    var descriptor = FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
+    return try context.fetch(descriptor).first
+}
+
+// MARK: - Salud → App
+
+enum HealthDataOption: String, AppEnum {
+    case steps
+    case distanceKm
+    case activeKcal
+    case basalKcal
+    case exerciseMinutes
+    case bodyMassKg
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Dato de Salud"
+    static let caseDisplayRepresentations: [HealthDataOption: DisplayRepresentation] = [
+        .steps: "Pasos",
+        .distanceKm: "Distancia (km)",
+        .activeKcal: "Calorías activas (kcal)",
+        .basalKcal: "Calorías en reposo (kcal)",
+        .exerciseMinutes: "Minutos de ejercicio",
+        .bodyMassKg: "Peso (kg)",
+    ]
+
+    var metric: HealthBridgeMetric {
+        switch self {
+        case .steps: return .steps
+        case .distanceKm: return .distanceKm
+        case .activeKcal: return .activeKcal
+        case .basalKcal: return .basalKcal
+        case .exerciseMinutes: return .exerciseMinutes
+        case .bodyMassKg: return .bodyMassKg
+        }
+    }
+}
+
+struct SaveHealthDataIntent: AppIntent {
+    static let title: LocalizedStringResource = "Guardar datos de Salud en GymTracker"
+    static let description = IntentDescription(
+        "Guarda en GymTracker los valores de una búsqueda de Salud agrupada por día. «Valores» y «Fechas» deben salir de la misma búsqueda (Obtener detalles: Valor y Fecha de inicio).",
+        categoryName: "Salud"
+    )
+
+    @Parameter(title: "Dato")
+    var data: HealthDataOption
+
+    @Parameter(title: "Valores")
+    var values: [Double]
+
+    @Parameter(title: "Fechas")
+    var dates: [Date]
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Guardar \(\.$data): \(\.$values) en las fechas \(\.$dates)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<Int> {
+        let updated = try await AppDependencies.shared.bridgeStore.importValues(data.metric, values: values, dates: dates)
+        NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
+        return .result(value: updated)
+    }
+}

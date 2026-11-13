@@ -5,22 +5,15 @@ import GymData
 
 @main
 struct GymTrackerApp: App {
-    private let persistence: Result<ModelContainer, Error>
-    private let healthService: any HealthService
-
-    init() {
-        persistence = Result { try GymPersistence.makeContainer() }
-        // HealthKit si el dispositivo tiene Salud; si no, un servicio que siempre
-        // falla con `.unavailable` (nunca datos inventados).
-        healthService = HealthKitService.makeDefault()
-    }
+    // HealthKit, Atajos (firma sin HealthKit) o no disponible: ver `AppDependencies`.
+    private let dependencies = AppDependencies.shared
 
     var body: some Scene {
         WindowGroup {
-            switch persistence {
+            switch dependencies.persistence {
             case .success(let container):
                 RootTabView()
-                    .environment(\.healthService, healthService)
+                    .environment(\.healthService, dependencies.healthService)
                     .modelContainer(container)
             case .failure(let error):
                 PersistenceErrorView(error: error)

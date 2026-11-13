@@ -12,6 +12,7 @@ struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(\.healthService) private var healthService
+    @Environment(\.openURL) private var openURL
 
     @Query(filter: #Predicate<Workout> { $0.endedAt != nil }, sort: \Workout.startedAt, order: .reverse)
     private var finishedWorkouts: [Workout]
@@ -184,6 +185,8 @@ struct WorkoutDetailView: View {
         defer { isSyncing = false }
         do {
             try await workout.syncToHealth(using: healthService, context: context)
+        } catch HealthServiceError.pendingShortcut {
+            openURL(HealthShortcuts.runURL(HealthShortcuts.exportName))
         } catch {
             healthError = error.localizedDescription
         }
