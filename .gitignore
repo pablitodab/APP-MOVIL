@@ -1,0 +1,17 @@
+# Xcode / XcodeGen
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
