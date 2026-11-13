@@ -90,7 +90,7 @@ struct WorkoutHistorySections: View {
             if let last = groups.last, last.month == month {
                 groups[groups.count - 1] = MonthGroup(month: month, title: last.title, workouts: last.workouts + [workout])
             } else {
-                let title = month.formatted(.dateTime.month(.wide).year()).capitalized
+                let title = StatsFormat.capitalized(month.formatted(.dateTime.month(.wide).year()))
                 groups.append(MonthGroup(month: month, title: title, workouts: [workout]))
             }
         }

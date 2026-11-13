@@ -155,7 +155,7 @@ private struct ExerciseEditorSection: View {
         HStack {
             Text(exercise.name)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.primary)
                 .lineLimit(2)
             Spacer()
             Menu {

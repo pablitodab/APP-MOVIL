@@ -181,11 +181,11 @@ struct WorkoutDetailView: View {
                         Image(systemName: "chevron.right").font(.caption.weight(.bold))
                     }
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                     .textCase(nil)
                 }
             } else {
-                Text(exercise.name).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
+                Text(exercise.name).font(.title3.weight(.bold)).foregroundStyle(Color.primary).textCase(nil)
             }
         } footer: {
             if !stats.isEmpty {
