@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import GymData
 
 /// Pestaña "Entrenamientos": historial de entrenamientos, historial de ejercicios
 /// y registro de un entrenamiento nuevo.

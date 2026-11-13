@@ -4,18 +4,18 @@ import GymCore
 
 /// Una serie: peso, repeticiones, tipo de esfuerzo y lado.
 @Model
-final class WorkoutSet {
-    @Attribute(.unique) var id: UUID
-    var orderIndex: Int
-    var weightKg: Double
-    var reps: Int
+public final class WorkoutSet {
+    @Attribute(.unique) public var id: UUID
+    public var orderIndex: Int
+    public var weightKg: Double
+    public var reps: Int
     /// `SetEffort.rawValue`. Se guarda como texto para poder filtrar con `#Predicate`.
-    var effortRaw: String
+    public var effortRaw: String
     /// `BodySide.rawValue`.
-    var sideRaw: String
-    var exercise: WorkoutExercise?
+    public var sideRaw: String
+    public var exercise: WorkoutExercise?
 
-    init(
+    public init(
         id: UUID = UUID(),
         orderIndex: Int,
         weightKg: Double,
@@ -31,18 +31,18 @@ final class WorkoutSet {
         self.sideRaw = side.rawValue
     }
 
-    var effort: SetEffort {
+    public var effort: SetEffort {
         get { SetEffort(rawValue: effortRaw) ?? .normal }
         set { effortRaw = newValue.rawValue }
     }
 
-    var side: BodySide {
+    public var side: BodySide {
         get { BodySide(rawValue: sideRaw) ?? .bilateral }
         set { sideRaw = newValue.rawValue }
     }
 
     /// kg × reps; 0 para calentamientos o valores no válidos.
-    var volumeKg: Double {
+    public var volumeKg: Double {
         guard effort.countsTowardVolume, weightKg > 0, reps > 0 else { return 0 }
         return weightKg * Double(reps)
     }

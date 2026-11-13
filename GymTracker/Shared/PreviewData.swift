@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import GymCore
+import GymData
 
 /// Datos de ejemplo solo para las previews de Xcode (base de datos en memoria).
 /// No los uses en la app: nunca se muestran al usuario.

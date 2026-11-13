@@ -16,8 +16,8 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
 
 packages:
-  GymCore:
-    path: Packages/GymCore
+  GymKit:
+    path: Packages/GymKit
 
 targets:
   GymTracker:
@@ -29,7 +29,10 @@ targets:
         excludes:
           - "SupportingFiles/**"
     dependencies:
-      - package: GymCore
+      - package: GymKit
+        product: GymCore
+      - package: GymKit
+        product: GymData
     settings:
       base:
         PRODUCT_NAME: GymTracker
@@ -43,31 +46,12 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: NO
 
-  GymTrackerTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: GymTrackerTests
-    dependencies:
-      # GymCore no se enlaza aquí: ya va dentro de la app (test host). Enlazarlo dos veces
-      # duplicaría sus tipos y romperían los `as?` sobre errores lanzados por la app.
-      - target: GymTracker
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pablitodab.gymtracker.tests
-        GENERATE_INFOPLIST_FILE: YES
-
 schemes:
   GymTracker:
     build:
       targets:
         GymTracker: all
-        GymTrackerTests: [test]
     run:
       config: Debug
-    test:
-      config: Debug
-      targets:
-        - GymTrackerTests
     archive:
       config: Release

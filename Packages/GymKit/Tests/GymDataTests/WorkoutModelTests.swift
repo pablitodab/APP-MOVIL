@@ -1,7 +1,7 @@
 import XCTest
 import SwiftData
 import GymCore
-@testable import GymTracker
+@testable import GymData
 
 final class WorkoutModelTests: XCTestCase {
     private var container: ModelContainer!

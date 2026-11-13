@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Ejecuta los tests de la app en un simulador de iPhone cuya versión coincide con el SDK
-# del Xcode activo. Requiere macOS con Xcode y el proyecto generado (`xcodegen generate`).
+# Imprime el UDID del simulador de iPhone más adecuado para el Xcode activo:
+# runtime igual (o el más cercano por debajo) al SDK y un modelo estándar reciente.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-mkdir -p build
 
 SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
-echo "SDK del simulador: iOS $SDK_VERSION"
+echo "SDK del simulador: iOS $SDK_VERSION" >&2
 
 DEVICE_ID="$(xcrun simctl list devices available -j | SDK_VERSION="$SDK_VERSION" python3 -c '
 import json, os, re, sys
@@ -39,27 +37,4 @@ if [[ -z "$DEVICE_ID" ]]; then
   exit 1
 fi
 
-echo "Arrancando simulador $DEVICE_ID..."
-SECONDS=0
-xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
-xcrun simctl bootstatus "$DEVICE_ID" -b
-echo "Simulador listo en ${SECONDS}s"
-
-set +e
-xcodebuild test \
-  -project GymTracker.xcodeproj \
-  -scheme GymTracker \
-  -destination "id=$DEVICE_ID" \
-  -derivedDataPath build/DerivedData-tests \
-  -resultBundlePath build/TestResults.xcresult \
-  CODE_SIGNING_ALLOWED=NO \
-  > build/xcodebuild-test.log 2>&1
-STATUS=$?
-set -e
-
-grep -E "error:|Test Case .* (passed|failed)|Executed|\*\* TEST" build/xcodebuild-test.log || true
-if [[ $STATUS -ne 0 ]]; then
-  echo "xcodebuild test falló ($STATUS). Últimas líneas del log:" >&2
-  tail -n 60 build/xcodebuild-test.log >&2
-fi
-exit $STATUS
+echo "$DEVICE_ID"

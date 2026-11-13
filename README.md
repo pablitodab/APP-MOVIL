@@ -5,6 +5,7 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 - SwiftUI, iOS 17+, SwiftData (datos solo en el iPhone, sin iCloud).
 - HealthKit para leer pasos, distancia, minutos de ejercicio, calorías activas/basales y peso, y para guardar entrenamientos.
 - Proyecto Xcode generado con [XcodeGen](https://github.com/yonaskolb/XcodeGen) a partir de `project.yml`.
+- Lógica y modelos en el paquete local `Packages/GymKit`, testeados con `swift test` (sin simulador).
 - GitHub Actions compila, ejecuta los tests y genera un `.ipa` listo para instalar con Sideloadly desde Windows.
 
 ## Estado
@@ -41,44 +42,46 @@ open GymTracker.xcodeproj
 
 Para ejecutar en tu iPhone desde Xcode: *Signing & Capabilities* → *Team* → tu Apple ID (equipo personal). Misma caducidad de 7 días.
 
-Tests:
+Tests y scripts:
 
 ```bash
-swift test --package-path Packages/GymCore   # lógica pura, también funciona en Linux
-scripts/test-ios.sh                          # tests de la app en simulador (requiere Xcode)
+swift test --package-path Packages/GymKit    # GymCore + GymData (en Linux solo GymCore)
+scripts/smoke-ios.sh                         # abre la app en el simulador y guarda una captura
 scripts/build-ipa.sh                         # genera build/GymTracker.ipa
 ```
 
 ## Arquitectura
 
 ```
-GymTracker/                    App iOS (SwiftUI + SwiftData)
+GymTracker/                    App iOS (solo interfaz e integración con el sistema)
   App/                         Punto de entrada, TabView, inyección de dependencias
   Features/Stats/              Pestaña "Progreso": calendario, racha y estadísticas de Salud
   Features/Workouts/           Pestaña "Entrenamientos": registro e historiales
   Health/                      (pendiente) HealthKitService: implementación real de HealthService
-  Persistence/                 Esquema SwiftData versionado y modelos
   Shared/                      Componentes y datos de preview compartidos
   Resources/                   Assets (icono, color de acento)
   SupportingFiles/             Info.plist y entitlements de HealthKit
-GymTrackerTests/               Tests de modelos SwiftData (simulador)
-Packages/GymCore/              Lógica de dominio pura, sin dependencias de Apple UI/datos
-  Domain/                      SetEffort, BodySide, normalización de nombres, reordenación
-  Calories/                    Intensidad (MET) y CalorieCalculator
-  Calendar/                    GymCalendar (semanas de lunes a domingo)
-  Health/                      Protocolo HealthService, modelos y servicios sin HealthKit
-scripts/                       Tests en simulador y generación del IPA
-.github/workflows/ci.yml       CI: tests en Linux + tests en simulador + IPA
+Packages/GymKit/               Paquete Swift local con todo lo testeable sin simulador
+  Sources/GymCore/             Dominio puro (Foundation; compila también en Linux)
+    Domain/                    SetEffort, BodySide, normalización de nombres, reordenación
+    Calories/                  Intensidad (MET) y CalorieCalculator
+    Calendar/                  GymCalendar (semanas de lunes a domingo)
+    Health/                    Protocolo HealthService, modelos y servicios sin HealthKit
+  Sources/GymData/             Modelos SwiftData, esquema versionado y contenedor
+  Tests/                       GymCoreTests y GymDataTests
+scripts/                       IPA, prueba de humo en simulador y elección de simulador
+.github/workflows/ci.yml       CI (ver abajo)
 ```
 
 Reglas:
 
 - **Las vistas no hablan con HealthKit.** Usan `@Environment(\.healthService)`, que es un `any HealthService`. Hoy la app inyecta `UnavailableHealthService` (no muestra datos inventados); la integración real lo sustituirá en `GymTrackerApp`.
-- **La lógica que no necesita SwiftUI/SwiftData/HealthKit va en GymCore** y se testea con `swift test`.
+- **La lógica que no necesita SwiftUI/HealthKit va en GymKit** (GymCore si tampoco necesita SwiftData) y se testea con `swift test`. La app solo contiene vistas e integración con el sistema.
+- Los tipos de GymData son `public`; al añadir propiedades o métodos que use la app, márcalos `public`.
 - **Un único calendario:** `GymCalendar.make()` (lunes primero). Todo lo que agrupe por día o semana lo usa.
 - **Errores visibles:** los errores llevan `errorDescription` en español para mostrarlos tal cual. Si la base de datos no abre, la app muestra una pantalla de error en lugar de cerrarse.
 
-### Modelo de datos (SwiftData, `GymSchemaV1`)
+### Modelo de datos (SwiftData, `GymSchemaV1`, en `GymData`)
 
 | Modelo | Campos | Relaciones |
 |---|---|---|
@@ -125,17 +128,18 @@ Para que el trabajo en paralelo no se pise, cada parte toca solo sus carpetas:
 
 | Parte | Carpetas | Toca también |
 |---|---|---|
-| Registro de entrenamientos e historiales | `GymTracker/Features/Workouts/` | Helpers de `Persistence/Models/` si faltan |
-| Calendario, racha y estadísticas | `GymTracker/Features/Stats/`, lógica de racha en `Packages/GymCore/Sources/GymCore/Calendar/` | — |
+| Registro de entrenamientos e historiales | `GymTracker/Features/Workouts/` | Helpers en `Packages/GymKit/Sources/GymData/` si faltan |
+| Calendario, racha y estadísticas | `GymTracker/Features/Stats/`, lógica de racha en `Packages/GymKit/Sources/GymCore/Calendar/` | — |
 | Integración HealthKit | `GymTracker/Health/` | Una línea en `GymTrackerApp` para inyectar el servicio |
 
-Cambios en `GymCore/Health/HealthService.swift` o en el esquema afectan a todas las partes: hazlos en un PR propio.
+Cambios en `GymCore/Health/HealthService.swift` o en el esquema de `GymData` afectan a todas las partes: hazlos en un PR propio.
 
 ## CI
 
 `.github/workflows/ci.yml` se ejecuta en cada PR y en `main`:
 
-1. `swift test` de GymCore en Linux (rápido y barato).
-2. En macOS: genera el proyecto, ejecuta los tests de la app en simulador y genera el IPA (artefacto descargable 30 días).
+1. `swift test` de GymCore en Linux (rápido y barato; si falla, no se gasta macOS).
+2. En macOS: `swift test` de GymKit completo (incluye los modelos SwiftData), genera el proyecto y compila el IPA (artefacto descargable 30 días). Unos 5 min.
+3. **Bajo demanda**: prueba de humo en simulador (abre la app, comprueba que no se cierra y guarda captura y errores del log). Se lanza añadiendo la etiqueta `simulador` al PR o a mano desde *Actions*. Tarda ~10 min porque arrancar un simulador limpio en GitHub es lento.
 
-El repositorio es privado: los minutos de macOS cuentan x10 en la cuota gratuita de GitHub (2.000 min/mes en el plan Free), así que cada run de macOS de ~10 min consume ~100 min de cuota.
+El repositorio es privado: los minutos de macOS cuentan x10 en la cuota gratuita de GitHub (2.000 min/mes en el plan Free). Por eso los tests no usan simulador por defecto.

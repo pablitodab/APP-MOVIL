@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import GymCore
+import GymData
 
 @main
 struct GymTrackerApp: App {
