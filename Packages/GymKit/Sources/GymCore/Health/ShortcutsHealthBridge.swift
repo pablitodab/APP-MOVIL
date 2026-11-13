@@ -54,7 +54,7 @@ public enum HealthBridgeError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .mismatchedCounts(let values, let dates):
-            return "El atajo envió \(values) valores y \(dates) fechas; deben ser el mismo número. Revisa que «Valores» y «Fechas» salgan de la misma búsqueda de Salud."
+            return "El atajo envió \(values) valores y \(dates) fechas; deben ser el mismo número. Revisa que «Valores» y «Fechas» salgan de la misma búsqueda de Salud, o deja «Fechas» vacío."
         case .invalidValue(let value):
             return "El atajo envió un valor no válido (\(value))."
         case .storageFailed(let message):

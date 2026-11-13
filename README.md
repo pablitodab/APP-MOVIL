@@ -48,12 +48,14 @@ Los nombres de los atajos tienen que ser **exactamente** «Salud a GymTracker» 
 
 ### Atajo 1: «Salud a GymTracker»
 
-Para cada dato, cuatro acciones (crea el primer bloque y duplícalo):
+Para cada dato, dos acciones (crea el primer bloque y duplícalo):
 
-1. **Buscar muestras de salud** donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. *Agrupar por*: **Día**. *Ordenar por*: Fecha de inicio.
-2. **Obtener detalles de la muestra de salud** → **Valor** (de *Muestras de salud*).
-3. **Obtener detalles de la muestra de salud** → **Fecha de inicio** (de *Muestras de salud*, no del paso 2).
-4. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos, *Valores*: el resultado del paso 2, *Fechas*: el resultado del paso 3.
+1. **Buscar muestras de salud** (en español puede llamarse *Buscar muestras médicas*) donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. *Agrupar por*: **Día**. Activa **Completar las que faltan**. *Ordenar por*: Fecha de inicio, **Más antiguo primero**. Sin límite.
+2. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos. En *Valores* pon la variable *Muestras médicas* y toca sobre ella para elegir la propiedad **Valor**. En *Fechas* pon *Muestras médicas* con la propiedad **Fecha de inicio**, o déjalo vacío: entonces la app entiende un valor por día terminando hoy, que es justo lo que da la búsqueda con *Completar las que faltan* y *Más antiguo primero*.
+
+Al ejecutarlo, la acción devuelve un texto del tipo "Días actualizados: 366 · valores recibidos: 366". Si "valores recibidos" es 1 en vez de unos 366, algo no cuadra: mándame una captura de ese resultado.
+
+Si Atajos avisa de que va a compartir muchos elementos, elige *Permitir compartir grandes cantidades de datos*.
 
 Repite el bloque con estos tipos y unidades (la unidad se elige en *Buscar muestras de salud*):
 
@@ -64,7 +66,7 @@ Repite el bloque con estos tipos y unidades (la unidad se elige en *Buscar muest
 | Energía activa | kcal | Calorías activas (kcal) |
 | Energía en reposo | kcal | Calorías en reposo (kcal) |
 | Minutos de ejercicio | min | Minutos de ejercicio |
-| Peso (opcional) | kg | Peso (kg); aquí sin agrupar, ordenado por fecha de inicio *Más reciente primero* y *Limitar* a 1 |
+| Peso (opcional) | kg | Peso (kg); aquí sin agrupar ni completar, *Más reciente primero*, *Límite* 1 y con *Fechas* = Fecha de inicio |
 
 Si el atajo tarda mucho, cambia "el último año" por "los últimos 35 días": lo ya importado se conserva.
 

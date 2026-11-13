@@ -174,27 +174,36 @@ enum HealthDataOption: String, AppEnum {
 struct SaveHealthDataIntent: AppIntent {
     static let title: LocalizedStringResource = "Guardar datos de Salud en GymTracker"
     static let description = IntentDescription(
-        "Guarda en GymTracker los valores de una búsqueda de Salud agrupada por día. «Valores» y «Fechas» deben salir de la misma búsqueda (Obtener detalles: Valor y Fecha de inicio).",
+        "Guarda en GymTracker una búsqueda de Salud agrupada por día. En «Valores» pon la propiedad Valor de las muestras. «Fechas» es opcional: vacío, se entiende un valor por día terminando hoy (Completar las que faltan y Más antiguo primero).",
         categoryName: "Salud"
     )
 
     @Parameter(title: "Dato")
     var data: HealthDataOption
 
+    // Textos y no números/fechas: Atajos no siempre reparte una lista de muestras de Salud
+    // en elementos (a veces llega un único texto con un valor por línea) y las fechas pueden
+    // llegar como texto con el formato del idioma. `ShortcutsInputParser` lo interpreta.
     @Parameter(title: "Valores")
-    var values: [Double]
+    var values: [String]
 
     @Parameter(title: "Fechas")
-    var dates: [Date]
+    var dates: [String]?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Guardar \(\.$data): \(\.$values) en las fechas \(\.$dates)")
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<Int> {
-        let updated = try await AppDependencies.shared.bridgeStore.importValues(data.metric, values: values, dates: dates)
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let parsed = try ShortcutsInputParser.parse(values: values, dates: dates, calendar: GymCalendar.make())
+        let updated = try await AppDependencies.shared.bridgeStore.importValues(
+            data.metric,
+            values: parsed.values,
+            dates: parsed.dates
+        )
         NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
-        return .result(value: updated)
+        let what = data == .bodyMassKg ? "Peso actualizado" : "Días actualizados"
+        return .result(value: "\(what): \(updated) · valores recibidos: \(parsed.values.count)")
     }
 }
