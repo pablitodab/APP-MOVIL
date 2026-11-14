@@ -39,15 +39,16 @@ enum SetNumbering {
 struct SetBadge: View {
     let label: String
     let effort: SetEffort
+    var diameter: CGFloat = SetBadge.size
 
     static let size: CGFloat = 36
 
     var body: some View {
         Text(label)
-            .font(.subheadline.weight(.bold))
+            .font(diameter < Self.size ? .footnote.weight(.bold) : .subheadline.weight(.bold))
             .monospacedDigit()
             .foregroundStyle(effort == .normal ? Color.accentColor : Color.white)
-            .frame(width: Self.size, height: Self.size)
+            .frame(width: diameter, height: diameter)
             .background(
                 Circle().fill(effort == .normal ? Color.accentColor.opacity(0.14) : effort.tint)
             )
