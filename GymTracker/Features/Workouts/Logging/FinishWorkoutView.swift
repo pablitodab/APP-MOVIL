@@ -118,8 +118,8 @@ struct FinishWorkoutView: View {
                 let pending = (try? workout.pendingPlannedSets(in: context)) ?? 0
                 if pending > 0 {
                     Text(pending == 1
-                         ? "Queda 1 serie de la plantilla sin marcar: no se guardará. Si la hiciste, vuelve con «Seguir entrenando» y márcala."
-                         : "Quedan \(pending) series de la plantilla sin marcar: no se guardarán. Si las hiciste, vuelve con «Seguir entrenando» y márcalas.")
+                         ? "Queda 1 serie sin marcar con ✓: no se guardará. Si la hiciste, vuelve con «Seguir entrenando» y márcala."
+                         : "Quedan \(pending) series sin marcar con ✓: no se guardarán. Si las hiciste, vuelve con «Seguir entrenando» y márcalas.")
                 }
             }
         }
