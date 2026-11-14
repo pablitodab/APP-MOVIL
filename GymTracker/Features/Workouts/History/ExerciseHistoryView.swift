@@ -18,17 +18,23 @@ struct ExerciseHistoryView: View {
         var id: String { rawValue }
     }
 
-    @Environment(\.modelContext) private var context
     @State private var metric: Metric = .topSet
     @State private var baselineID: UUID? = nil
     @State private var currentID: UUID? = nil
-    @State private var showingRename = false
-    @State private var newName = ""
-    @State private var renameError: String? = nil
+    @State private var editing = false
+    @Query private var muscleRows: [ExerciseMuscles]
+
+    init(definition: ExerciseDefinition, linksToWorkouts: Bool) {
+        self.definition = definition
+        self.linksToWorkouts = linksToWorkouts
+        let id = definition.id
+        _muscleRows = Query(filter: #Predicate<ExerciseMuscles> { $0.definitionID == id })
+    }
 
     var body: some View {
         let entries = definition.completedEntries
         List {
+            musclesSection
             if entries.isEmpty {
                 ContentUnavailableView(
                     "Sin sesiones terminadas",
@@ -48,30 +54,46 @@ struct ExerciseHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Renombrar") {
-                    newName = definition.name
-                    showingRename = true
-                }
+                Button("Editar") { editing = true }
             }
         }
-        .alert("Renombrar ejercicio", isPresented: $showingRename) {
-            TextField("Nombre", text: $newName)
-            Button("Guardar") { rename() }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("El nuevo nombre se aplica a todo el historial.")
-        }
-        .alert(
-            "No se pudo renombrar",
-            isPresented: Binding(get: { renameError != nil }, set: { if !$0 { renameError = nil } })
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(renameError ?? "")
+        .sheet(isPresented: $editing) {
+            ExerciseFormSheet(mode: .edit(definition))
         }
     }
 
     // MARK: Secciones
+
+    /// Músculos que trabaja; si no tiene (ejercicios de antes), invita a elegirlos.
+    @ViewBuilder
+    private var musclesSection: some View {
+        let muscles = ExerciseMuscles.byDefinition(muscleRows)[definition.id] ?? []
+        Section {
+            if muscles.isEmpty {
+                Button {
+                    editing = true
+                } label: {
+                    Label("Elegir los músculos que trabaja", systemImage: "figure.strengthtraining.traditional")
+                }
+            } else {
+                Button {
+                    editing = true
+                } label: {
+                    HStack(spacing: Theme.Spacing.m) {
+                        IconBadge(systemImage: "figure.strengthtraining.traditional")
+                        Text(MuscleGroup.summary(muscles))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                }
+                .accessibilityHint("Editar el ejercicio")
+            }
+        } header: {
+            Text("Músculos")
+        }
+    }
 
     private var recordsSection: some View {
         let records = definition.records
@@ -239,15 +261,6 @@ struct ExerciseHistoryView: View {
                     SessionRow(entry: entry)
                 }
             }
-        }
-    }
-
-    private func rename() {
-        do {
-            try definition.rename(to: newName, in: context)
-            context.saveNow()
-        } catch {
-            renameError = error.localizedDescription
         }
     }
 }

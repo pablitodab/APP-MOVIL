@@ -9,6 +9,8 @@ import Foundation
 /// - `-tab progress|workouts`: pestaña inicial.
 /// - `-openActiveWorkout`: abre el entrenamiento en curso.
 /// - `-noActiveWorkout`: sin entrenamiento en curso (muestra la tarjeta de inicio).
+/// - `-exercises`: Entrenamientos con la lista de Ejercicios en vez del historial.
+/// - `-newExercise`: abre el formulario de ejercicio nuevo.
 ///
 /// Salud usa también datos de ejemplo en memoria, así no aparece la petición de permisos.
 enum ScreenshotMode {
@@ -24,6 +26,10 @@ enum ScreenshotMode {
     }
 
     static var opensActiveWorkout: Bool { isEnabled && arguments.contains("-openActiveWorkout") }
+
+    static var showsExercises: Bool { isEnabled && arguments.contains("-exercises") }
+
+    static var opensNewExercise: Bool { isEnabled && arguments.contains("-newExercise") }
 
     static var includesWorkoutInProgress: Bool { !arguments.contains("-noActiveWorkout") }
 }

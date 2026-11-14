@@ -34,6 +34,7 @@ struct WorkoutsScreen: View {
     @State private var pendingDeletion: Workout? = nil
     @State private var errorMessage: String? = nil
     @State private var creatingTemplate = false
+    @State private var creatingExercise = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -76,7 +77,7 @@ struct WorkoutsScreen: View {
                 case .workouts:
                     WorkoutHistorySections(searchText: searchText) { pendingDeletion = $0 }
                 case .exercises:
-                    ExerciseHistorySections(searchText: searchText)
+                    ExerciseHistorySections(searchText: searchText) { creatingExercise = true }
                 }
             }
             .searchable(text: $searchText, prompt: Text(searchPrompt))
@@ -85,6 +86,9 @@ struct WorkoutsScreen: View {
                 destination(for: route)
             }
             .newTemplateAlert(isPresented: $creatingTemplate) { createTemplate(named: $0) }
+            .sheet(isPresented: $creatingExercise) {
+                ExerciseFormSheet(mode: .create(initialName: searchText))
+            }
             .confirmationDialog(
                 "¿Eliminar este entrenamiento?",
                 isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
@@ -109,6 +113,8 @@ struct WorkoutsScreen: View {
             #if DEBUG
             .task {
                 if ScreenshotMode.opensActiveWorkout, presented == nil { presented = inProgress.first }
+                if ScreenshotMode.showsExercises { segment = .exercises }
+                if ScreenshotMode.opensNewExercise { creatingExercise = true }
             }
             #endif
         }
