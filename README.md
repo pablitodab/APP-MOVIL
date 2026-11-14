@@ -50,8 +50,12 @@ Los nombres de los atajos tienen que ser **exactamente** «Salud a GymTracker» 
 
 Para cada dato, dos acciones (crea el primer bloque y duplícalo):
 
-1. **Buscar muestras de salud** (en español puede llamarse *Buscar muestras médicas*) donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. *Agrupar por*: **Día**. Activa **Completar las que faltan**. *Ordenar por*: Fecha de inicio, **Más antiguo primero**. Sin límite.
+1. **Buscar muestras de salud** (en español puede llamarse *Buscar muestras médicas*) donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. Pulsa **Añadir filtro** → **Origen** es **tu iPhone** (si llevas Apple Watch, mira la nota de abajo). *Agrupar por*: **Día**. Activa **Completar las que faltan**. *Ordenar por*: Fecha de inicio, **Más antiguo primero**. Sin límite.
 2. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos. En *Valores* pon la variable *Muestras médicas* y toca sobre ella para elegir la propiedad **Valor**. En *Fechas* pon *Muestras médicas* con la propiedad **Fecha de inicio**, o déjalo vacío: entonces la app entiende un valor por día terminando hoy, que es justo lo que da la búsqueda con *Completar las que faltan* y *Más antiguo primero*.
+
+**Por qué el filtro de Origen:** Atajos suma las muestras de todas las fuentes sin quitar duplicados, a diferencia de la app Salud. Si otra app (p. ej. Fitia o Lyfta) también escribe pasos o calorías, sin el filtro los totales salen más altos que en Salud. Puedes ver qué fuentes hay en *Salud → Pasos → Fuentes de datos y acceso*. Con Apple Watch, filtra por el reloj si es el que llevas todo el día.
+
+**Al duplicar un bloque**, la acción *Guardar* copiada sigue apuntando a la búsqueda del bloque original. Vuelve a elegir en *Valores* la variable de la búsqueda nueva (propiedad *Valor*) y deja *Fechas* vacío, o pon la *Fecha de inicio* de esa misma búsqueda.
 
 Al ejecutarlo, la acción devuelve un texto del tipo "Días actualizados: 366 · valores recibidos: 366". Si "valores recibidos" es 1 en vez de unos 366, algo no cuadra: mándame una captura de ese resultado.
 
