@@ -75,7 +75,6 @@ final class MigrationTests: XCTestCase {
         let next = try Workout.start(in: context, at: start.addingTimeInterval(86_400), from: template)
         try context.save()
         XCTAssertEqual(next.orderedExercises.first?.plannedSets(target: 2).last, SetSample(weightKg: 80, reps: 8))
-    }
 
         // V3: los músculos se pueden asignar a un ejercicio ya existente.
         let bench = try XCTUnwrap(workout.orderedExercises.first?.definition)
