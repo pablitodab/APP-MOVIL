@@ -14,6 +14,7 @@ App personal de iOS para registrar entrenamientos de gimnasio, ver progreso y si
 - Integración real con HealthKit (`GymTracker/Health/HealthKitService.swift`): lectura de pasos, distancia, minutos de ejercicio, kcal activas/basales y peso; guardado de entrenos de fuerza.
 - Pestaña **Progreso**: calendario, racha semanal y estadísticas (ver abajo).
 - Pestaña **Entrenamientos**: registro en vivo, plantillas (rutinas), cierre con calorías y envío a Salud, historial de entrenamientos, historial por ejercicio y comparaciones (ver abajo).
+- Pestaña **Cardio**: sesiones apuntadas a mano (no van a Salud), ritmo caminando/corriendo, gráficas semanales, récords, comparación y VO2max (ver abajo).
 
 ## Instalar en el iPhone desde Windows (Sideloadly)
 
@@ -125,6 +126,7 @@ GymTracker/                    App iOS (solo interfaz e integración con el sist
   App/                         Punto de entrada, TabView, inyección de dependencias
   Features/Stats/              Pestaña "Progreso": calendario, racha y estadísticas de Salud
   Features/Workouts/           Pestaña "Entrenamientos": registro e historiales
+  Features/Cardio/             Pestaña "Cardio": sesiones manuales, tipos, gráficas y VO2max
   Health/                      HealthKitService: implementación real de HealthService
   Shortcuts/                   Acciones de Atajos (App Intents) del puente con Salud sin HealthKit
   Shared/                      Componentes y datos de preview compartidos
@@ -137,6 +139,7 @@ Packages/GymKit/               Paquete Swift local con todo lo testeable sin sim
     Calendar/                  GymCalendar (semanas de lunes a domingo), MonthGrid, WeeklyStreak
     Stats/                     Periodos (semana/mes/6 meses/año) y agregación de Salud y tiempo de entreno
     Analysis/                  Estadísticas por sesión, 1RM, récords, comparación y sugerencia de series
+    Cardio/                    Máquinas, modalidad, ritmo/velocidad, validación, récords, semanas y comparación
     Health/                    Protocolo HealthService, modelos y servicios sin HealthKit
   Sources/GymData/             Modelos SwiftData, esquema versionado y contenedor
   Tests/                       GymCoreTests y GymDataTests
@@ -154,7 +157,7 @@ Reglas:
 - **Capturas en simulador:** `scripts/smoke-ios.sh` abre la app en Debug con `-screenshots` (datos de `PreviewData` en memoria, ver `ScreenshotMode.swift`) y guarda capturas en claro y oscuro en `build/smoke/`.
 - **Errores visibles:** los errores llevan `errorDescription` en español para mostrarlos tal cual. Si la base de datos no abre, la app muestra una pantalla de error en lugar de cerrarse.
 
-### Modelo de datos (SwiftData, `GymSchemaV2`, en `GymData`)
+### Modelo de datos (SwiftData, `GymSchemaV4`, en `GymData`)
 
 | Modelo | Campos | Relaciones |
 |---|---|---|
@@ -165,6 +168,10 @@ Reglas:
 | `WorkoutTemplate` (V2) | `name`, `createdAt`, `lastUsedAt` | `exercises` (cascade) |
 | `TemplateExercise` (V2) | `orderIndex`, `definitionID`, `exerciseName`, `targetSets` (1–20) | `template` |
 | `ExerciseSetTarget` (V2) | `workoutExerciseID`, `workoutID`, `targetSets` | — (ids) |
+| `ExerciseMuscles` (V3) | `definitionID` (único), `musclesRaw` | — (id) |
+| `CardioActivity` (V4) | `name`, `normalizedName`, `equipmentRaw`, `musclesRaw`, `createdAt` | `sessions` (nullify) |
+| `CardioSession` (V4) | `performedAt`, `durationSeconds`, `distanceKm?`, `gaitRaw`, `inclinePercent?`, `speedKmh?`, `level?`, `rpe?`, `averageHeartRate?`, `maxHeartRate?`, `notes` | `activity` |
+| `VO2MaxReading` (V4) | `measuredAt`, `value` (ml/kg/min) | — |
 
 - `ExerciseDefinition` es el catálogo: da identidad a "Press banca" en todos los entrenamientos y es lo que permite el historial por ejercicio. Crea o reutiliza con `ExerciseDefinition.findOrCreate(named:in:)` (ignora mayúsculas, tildes y espacios); `create(named:muscles:in:)` crea uno nuevo con músculos y falla si el nombre ya existe.
 - `ExerciseMuscles` (esquema V3) guarda los músculos (`MuscleGroup`) de cada ejercicio por `ExerciseDefinition.id`, en un modelo aparte para no tocar los modelos de V1. Los ejercicios anteriores quedan sin músculos hasta que se editan.
@@ -172,7 +179,7 @@ Reglas:
 - Borrar con deslizamiento: `deleteSets(atOffsets:in:)` / `deleteExercises(atOffsets:in:)` borran del almacén y renumeran.
 - `Workout.finish(at:)` valida la hora de fin y calcula las calorías activas. Rechaza sesiones de más de 5 h (entrenamiento olvidado abierto) para no enviar cifras absurdas a Salud.
 - Las series de calentamiento no cuentan para el volumen (`SetEffort.countsTowardVolume`).
-- **Migraciones:** V1 (los cuatro primeros modelos) ya está instalado con datos reales. V2 solo **añade** modelos, así que la etapa V1→V2 es ligera; `MigrationTests` crea un almacén V1 en disco, lo abre con el esquema actual y comprueba que no se pierde nada. V1 y V2 comparten las clases: **no cambies** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition` sin antes congelar una copia de V1 dentro de `GymSchemaV1` (ver comentario en `GymPersistence.swift`). Por eso los modelos nuevos apuntan a los antiguos por id y no con relaciones (una relación necesitaría su inversa en el modelo antiguo).
+- **Migraciones:** V1 (los cuatro primeros modelos) ya está instalado con datos reales. V2 solo **añade** modelos, así que la etapa V1→V2 es ligera; `MigrationTests` crea un almacén V1 en disco, lo abre con el esquema actual y comprueba que no se pierde nada. V1 y V2 comparten las clases: **no cambies** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition` sin antes congelar una copia de V1 dentro de `GymSchemaV1` (ver comentario en `GymPersistence.swift`). Por eso los modelos nuevos apuntan a los antiguos por id y no con relaciones (una relación necesitaría su inversa en el modelo antiguo). V3 (músculos) y V4 (cardio y VO2max) también solo añaden modelos, con etapas ligeras V2→V3 y V3→V4; `MigrationTests` abre almacenes V1, V2 y V3 con el esquema actual.
 
 ### Pestaña Progreso (calendario, racha y estadísticas)
 
@@ -233,6 +240,20 @@ Código en `GymTracker/Features/Workouts/` (`Logging/` registro en vivo, `Histor
 
 Definiciones (en `GymCore/Analysis`, con tests): *serie efectiva* = no es calentamiento y tiene repeticiones; *volumen* = kg × reps de las efectivas; *mejor serie* = la efectiva más pesada (a igual peso, más reps); *1RM estimado* = Epley, solo con 1–12 reps.
 
+## Pestaña Cardio
+
+Código en `GymTracker/Features/Cardio/`; la lógica (con tests en Linux) en `GymCore/Cardio/`.
+
+- **Solo registro manual.** Las sesiones se apuntan después de entrenar y se guardan solo en la app: no se leen ni se escriben en Salud ni en Atajos.
+- **Tipos de cardio** (`CardioActivity`): nombre, máquina (`CardioEquipment`: cinta, exterior, bici, elíptica, remo, escaladora, otro) y músculos con el mismo selector que los ejercicios. La máquina decide los campos: velocidad e inclinación en la cinta, nivel en bici/elíptica/remo/escaladora. Solo se borran tipos sin sesiones.
+- **Sesión**: tipo, inicio, duración (h/min/s), distancia opcional, modalidad (caminando/corriendo en cinta y exterior), velocidad/inclinación/nivel opcionales, RPE 1–10, FC media y máxima opcionales y notas. `CardioSessionInput.validate()` rechaza erratas (más de 24 h, más de 60 km/h de media, FC fuera de 30–250, media > máxima…). Al guardar se descarta lo que no aplica a la máquina.
+- **Cálculos**: ritmo = tiempo / distancia (min/km), solo caminando o corriendo; velocidad media = distancia / tiempo. El ritmo de una semana es tiempo total / distancia total, no la media de ritmos. Caminando y corriendo nunca se mezclan (récords, gráficas ni comparaciones).
+- **Récords**: mayor distancia, sesión más larga, mejor ritmo caminando y corriendo (sesiones de 1 km o más) y velocidad media más alta en bici/remo/elíptica.
+- **Gráficas**: últimas 12 semanas (lunes a domingo, `GymCalendar`) de distancia, tiempo o ritmo, de todos los tipos o de uno. En cada tipo, progresión por sesión.
+- **Comparar**: dos sesiones cualesquiera; por defecto la anterior del mismo tipo y modalidad. El RPE y la FC se muestran sin color (menos no siempre es peor).
+- **VO2max** (`VO2MaxReading`): lecturas apuntadas a mano (10–95 ml/kg/min) con gráfica y cambio desde la primera.
+- El cardio no marca el calendario ni la racha de Progreso, que siguen contando solo entrenamientos de fuerza.
+
 ## Reparto del trabajo
 
 Para que el trabajo en paralelo no se pise, cada parte toca solo sus carpetas:
@@ -242,6 +263,7 @@ Para que el trabajo en paralelo no se pise, cada parte toca solo sus carpetas:
 | Registro de entrenamientos e historiales | `GymTracker/Features/Workouts/` | Helpers en `Packages/GymKit/Sources/GymData/` si faltan |
 | Calendario, racha y estadísticas | `GymTracker/Features/Stats/`, `Packages/GymKit/Sources/GymCore/Calendar/` y `GymCore/Stats/` | — |
 | Integración HealthKit | `GymTracker/Health/` | Una línea en `GymTrackerApp` para inyectar el servicio |
+| Cardio | `GymTracker/Features/Cardio/`, `GymCore/Cardio/`, `GymData/Cardio.swift` | Casos de `MetricKind` en `WorkoutFormat.swift` |
 
 Cambios en `GymCore/Health/HealthService.swift` o en el esquema de `GymData` afectan a todas las partes: hazlos en un PR propio.
 

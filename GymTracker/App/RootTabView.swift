@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Navegación principal: dos pestañas.
+/// Navegación principal: Progreso, Entrenamientos (fuerza) y Cardio.
 struct RootTabView: View {
     enum Tab: Hashable {
         case progress
         case workouts
+        case cardio
     }
 
     @State private var selection: Tab
@@ -14,6 +15,7 @@ struct RootTabView: View {
         var initial = Tab.workouts
         #if DEBUG
         if ScreenshotMode.initialTab == "progress" { initial = .progress }
+        if ScreenshotMode.initialTab == "cardio" { initial = .cardio }
         #endif
         _selection = State(initialValue: initial)
     }
@@ -47,6 +49,10 @@ struct RootTabView: View {
             WorkoutsScreen()
                 .tabItem { Label("Entrenamientos", systemImage: "dumbbell.fill") }
                 .tag(Tab.workouts)
+
+            CardioScreen()
+                .tabItem { Label("Cardio", systemImage: "figure.run") }
+                .tag(Tab.cardio)
         }
     }
 }

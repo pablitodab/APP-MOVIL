@@ -58,9 +58,24 @@ enum MetricKind {
     case kcal
     case duration
     case count
+    // Cardio (ver `CardioFormat`).
+    case preciseDuration
+    case distance
+    case pace
+    case speed
+    case heartRate
+    case percent
+    case vo2Max
 
     func format(_ value: Double) -> String {
         switch self {
+        case .preciseDuration: return CardioFormat.duration(value)
+        case .distance: return CardioFormat.distance(value)
+        case .pace: return CardioFormat.pace(value)
+        case .speed: return CardioFormat.speed(value)
+        case .heartRate: return CardioFormat.heartRate(value)
+        case .percent: return CardioFormat.percent(value)
+        case .vo2Max: return CardioFormat.vo2Max(value)
         case .weight: return WorkoutFormat.weight(value)
         case .volume: return WorkoutFormat.volume(value)
         case .kcal: return WorkoutFormat.kcal(value)
