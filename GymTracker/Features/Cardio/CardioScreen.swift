@@ -364,7 +364,7 @@ private struct VO2MaxSummaryRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Apuntar VO2max")
                             .font(.headline)
-                        Text("Cópialo del reloj de vez en cuando para ver cómo evoluciona.")
+                        Text("Impórtalo de Salud con el atajo o apúntalo a mano para ver cómo evoluciona.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

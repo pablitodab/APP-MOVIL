@@ -4,7 +4,8 @@ import Charts
 import GymCore
 import GymData
 
-/// Historial del VO2max apuntado a mano (lo calcula el reloj; la app no lo lee de Salud).
+/// Historial del VO2max: lecturas apuntadas a mano o importadas de Salud con el atajo
+/// «Salud a GymTracker» (dato «VO2max» en «Guardar datos de Salud en GymTracker»).
 struct VO2MaxHistoryView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \VO2MaxReading.measuredAt, order: .reverse) private var readings: [VO2MaxReading]
@@ -20,7 +21,7 @@ struct VO2MaxHistoryView: View {
                         .font(.headline)
                 }
             } footer: {
-                Text("Copia cada pocas semanas el VO2max que te muestra el Apple Watch o la app Salud. Más alto indica mejor forma aeróbica.")
+                Text("Llega solo si añades el dato «VO2max» al atajo «Salud a GymTracker»; si no, apúntalo a mano. El Apple Watch lo estima en caminatas, carreras o senderismo al aire libre. Más alto indica mejor forma aeróbica.")
             }
 
             if readings.isEmpty {
@@ -48,6 +49,12 @@ struct VO2MaxHistoryView: View {
                     ForEach(readings) { reading in
                         HStack {
                             Text(StatsFormat.capitalized(WorkoutFormat.day(reading.measuredAt)))
+                            if reading.source == .health {
+                                Image(systemName: "heart.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.health)
+                                    .accessibilityLabel("De Salud")
+                            }
                             Spacer()
                             Text("\(CardioFormat.vo2Max(reading.value)) ml/kg/min")
                                 .monospacedDigit()

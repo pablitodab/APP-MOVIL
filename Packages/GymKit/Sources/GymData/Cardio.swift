@@ -210,25 +210,53 @@ extension CardioActivity {
     }
 }
 
-/// VO2max apuntado a mano (lo calcula el Apple Watch; la app no lo lee de Salud).
+/// Lectura de VO2max: apuntada a mano o importada de Salud con el atajo (la app no lee
+/// Salud directamente con la firma gratuita).
 @Model
 public final class VO2MaxReading {
     @Attribute(.unique) public var id: UUID
     public var measuredAt: Date
     /// ml/kg/min.
     public var value: Double
+    public var sourceRaw: String
 
-    public init(id: UUID = UUID(), measuredAt: Date, value: Double) {
+    public init(id: UUID = UUID(), measuredAt: Date, value: Double, source: VO2MaxSource = .manual) {
         self.id = id
         self.measuredAt = measuredAt
         self.value = value
+        self.sourceRaw = source.rawValue
+    }
+
+    public var source: VO2MaxSource {
+        get { VO2MaxSource(rawValue: sourceRaw) ?? .manual }
+        set { sourceRaw = newValue.rawValue }
     }
 
     @discardableResult
     public static func log(value: Double, at date: Date, in context: ModelContext) throws -> VO2MaxReading {
         try VO2Max.validate(value)
-        let reading = VO2MaxReading(measuredAt: date, value: value)
+        let reading = VO2MaxReading(measuredAt: date, value: value, source: .manual)
         context.insert(reading)
         return reading
+    }
+
+    /// Guarda las muestras que envía el atajo (ver `VO2Max.importPlan`).
+    /// - Returns: lecturas nuevas y actualizadas.
+    @discardableResult
+    public static func importFromHealth(values: [Double], dates: [Date], in context: ModelContext, calendar: Calendar) throws -> (inserted: Int, updated: Int) {
+        let stored = try context.fetch(FetchDescriptor<VO2MaxReading>())
+        let plan = VO2Max.importPlan(
+            values: values,
+            dates: dates,
+            existing: stored.map { .init(id: $0.id, date: $0.measuredAt, value: $0.value, source: $0.source) },
+            calendar: calendar
+        )
+        for insert in plan.inserts {
+            context.insert(VO2MaxReading(measuredAt: insert.date, value: insert.value, source: .health))
+        }
+        for reading in stored {
+            if let value = plan.updates[reading.id] { reading.value = value }
+        }
+        return (plan.inserts.count, plan.updates.count)
     }
 }

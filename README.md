@@ -68,6 +68,7 @@ Repite el bloque con estos tipos y unidades (la unidad se elige en *Buscar muest
 | Energía en reposo | kcal | Calorías en reposo (kcal) |
 | Minutos de ejercicio | min | Minutos de ejercicio |
 | Peso (opcional) | kg | Peso (kg); aquí sin agrupar ni completar, *Más reciente primero*, *Límite* 1 y con *Fechas* = Fecha de inicio |
+| VO2 máx. (opcional; puede llamarse *Capacidad cardiorrespiratoria*) | mL/(kg·min) | VO2max (ml/kg/min); sin agrupar ni completar, sin límite y con *Fechas* = Fecha de inicio (obligatorio) |
 
 Si el atajo tarda mucho, cambia "el último año" por "los últimos 35 días": lo ya importado se conserva.
 
@@ -171,7 +172,7 @@ Reglas:
 | `ExerciseMuscles` (V3) | `definitionID` (único), `musclesRaw` | — (id) |
 | `CardioActivity` (V4) | `name`, `normalizedName`, `equipmentRaw`, `musclesRaw`, `createdAt` | `sessions` (nullify) |
 | `CardioSession` (V4) | `performedAt`, `durationSeconds`, `distanceKm?`, `gaitRaw`, `inclinePercent?`, `speedKmh?`, `level?`, `rpe?`, `averageHeartRate?`, `maxHeartRate?`, `notes` | `activity` |
-| `VO2MaxReading` (V4) | `measuredAt`, `value` (ml/kg/min) | — |
+| `VO2MaxReading` (V4) | `measuredAt`, `value` (ml/kg/min), `sourceRaw` (manual/salud) | — |
 
 - `ExerciseDefinition` es el catálogo: da identidad a "Press banca" en todos los entrenamientos y es lo que permite el historial por ejercicio. Crea o reutiliza con `ExerciseDefinition.findOrCreate(named:in:)` (ignora mayúsculas, tildes y espacios); `create(named:muscles:in:)` crea uno nuevo con músculos y falla si el nombre ya existe.
 - `ExerciseMuscles` (esquema V3) guarda los músculos (`MuscleGroup`) de cada ejercicio por `ExerciseDefinition.id`, en un modelo aparte para no tocar los modelos de V1. Los ejercicios anteriores quedan sin músculos hasta que se editan.
@@ -251,7 +252,7 @@ Código en `GymTracker/Features/Cardio/`; la lógica (con tests en Linux) en `Gy
 - **Récords**: mayor distancia, sesión más larga, mejor ritmo caminando y corriendo (sesiones de 1 km o más) y velocidad media más alta en bici/remo/elíptica.
 - **Gráficas**: últimas 12 semanas (lunes a domingo, `GymCalendar`) de distancia, tiempo o ritmo, de todos los tipos o de uno. En cada tipo, progresión por sesión.
 - **Comparar**: dos sesiones cualesquiera; por defecto la anterior del mismo tipo y modalidad. El RPE y la FC se muestran sin color (menos no siempre es peor).
-- **VO2max** (`VO2MaxReading`): lecturas apuntadas a mano (10–95 ml/kg/min) con gráfica y cambio desde la primera.
+- **VO2max** (`VO2MaxReading`): lecturas apuntadas a mano o importadas de Salud con el atajo (dato «VO2max», con fechas reales). Una por día; reimportar no duplica y una lectura importada igual a una manual del mismo día se omite (`VO2Max.importPlan`). Rango 10–95 ml/kg/min, gráfica y cambio desde la primera. Las sesiones de cardio siguen sin tocar Salud.
 - El cardio no marca el calendario ni la racha de Progreso, que siguen contando solo entrenamientos de fuerza.
 
 ## Reparto del trabajo

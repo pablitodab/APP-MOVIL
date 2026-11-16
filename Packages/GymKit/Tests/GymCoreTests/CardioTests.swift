@@ -166,3 +166,42 @@ final class CardioAnalysisTests: XCTestCase {
         XCTAssertNil(CardioComparison.defaultBaseline(for: runOld, among: all))
     }
 }
+
+final class VO2MaxImportTests: XCTestCase {
+    private let calendar = GymCalendar.make(timeZone: TimeZone(identifier: "UTC")!)
+
+    private func date(_ d: Int, hour: Int = 10) throws -> Date {
+        try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 11, day: d, hour: hour)))
+    }
+
+    func testOneReadingPerDayAndRejectsOutOfRange() throws {
+        let plan = VO2Max.importPlan(
+            values: [44.0, 44.6, 5, 45.2],
+            dates: [try date(1, hour: 8), try date(1, hour: 19), try date(2), try date(9)],
+            existing: [],
+            calendar: calendar
+        )
+        XCTAssertEqual(plan.inserts.map(\.value), [44.6, 45.2])
+        XCTAssertEqual(plan.rejected, 1)
+        XCTAssertTrue(plan.updates.isEmpty)
+    }
+
+    func testReimportDoesNotDuplicateAndRespectsManualCopies() throws {
+        let imported = UUID()
+        let existing = [
+            VO2Max.Existing(id: imported, date: try date(1, hour: 7), value: 44.6, source: .health),
+            VO2Max.Existing(id: UUID(), date: try date(9, hour: 21), value: 45.2, source: .manual),
+            VO2Max.Existing(id: UUID(), date: try date(12), value: 40, source: .manual),
+        ]
+        let plan = VO2Max.importPlan(
+            values: [44.6, 45.2, 46.0, 47.0, 44.8],
+            dates: [try date(1), try date(9), try date(12), try date(15), try date(1, hour: 20)],
+            existing: existing,
+            calendar: calendar
+        )
+        // Día 1: la importada pasa a 44,8 (la última del día). Día 9: misma lectura que la
+        // manual, se omite. Día 12: la manual tiene otro valor, se guardan las dos.
+        XCTAssertEqual(plan.updates, [imported: 44.8])
+        XCTAssertEqual(plan.inserts.map(\.value), [46.0, 47.0])
+    }
+}

@@ -113,11 +113,82 @@ public enum CardioValidationError: Error, Equatable, LocalizedError {
     }
 }
 
-/// Lectura de VO2max apuntada a mano (por ejemplo, la que muestra el Apple Watch).
+/// De dónde viene una lectura de VO2max. Se persiste por `rawValue`.
+public enum VO2MaxSource: String, Codable, CaseIterable, Sendable {
+    /// Apuntada a mano en la app.
+    case manual
+    /// Importada de Salud con el atajo «Salud a GymTracker».
+    case health
+}
+
+/// Lecturas de VO2max (ml/kg/min): validación e importación desde Salud.
 public enum VO2Max {
     public static let range: ClosedRange<Double> = 10...95
 
     public static func validate(_ value: Double) throws {
         guard value.isFinite, range.contains(value) else { throw CardioValidationError.vo2MaxOutOfRange }
+    }
+
+    /// Lectura ya guardada, para decidir qué hacer con las que llegan de Salud.
+    public struct Existing: Equatable, Sendable {
+        public let id: UUID
+        public let date: Date
+        public let value: Double
+        public let source: VO2MaxSource
+
+        public init(id: UUID, date: Date, value: Double, source: VO2MaxSource) {
+            self.id = id
+            self.date = date
+            self.value = value
+            self.source = source
+        }
+    }
+
+    public struct ImportPlan: Equatable, Sendable {
+        public struct Insert: Equatable, Sendable {
+            public let date: Date
+            public let value: Double
+        }
+
+        public var inserts: [Insert] = []
+        /// Lecturas importadas antes que cambian de valor (Salud recalcula el día).
+        public var updates: [UUID: Double] = [:]
+        /// Fuera de rango: nunca se guardan.
+        public var rejected = 0
+    }
+
+    /// Qué hacer con las muestras de Salud. Reimportar el mismo periodo no duplica nada:
+    ///
+    /// - Una lectura por día: si llegan varias del mismo día, cuenta la última.
+    /// - Si ese día ya hay una importada, se actualiza su valor.
+    /// - Si ese día ya hay una apuntada a mano con el mismo valor (±0,1), se omite: es la
+    ///   misma lectura copiada del reloj. Con otro valor se guardan las dos.
+    public static func importPlan(values: [Double], dates: [Date], existing: [Existing], calendar: Calendar) -> ImportPlan {
+        var plan = ImportPlan()
+        var latestByDay: [Date: (date: Date, value: Double)] = [:]
+        for (value, date) in zip(values, dates) {
+            guard value.isFinite, range.contains(value) else {
+                plan.rejected += 1
+                continue
+            }
+            let day = calendar.startOfDay(for: date)
+            if let current = latestByDay[day], current.date > date { continue }
+            latestByDay[day] = (date, value)
+        }
+        let existingByDay = Dictionary(grouping: existing) { calendar.startOfDay(for: $0.date) }
+        for day in latestByDay.keys.sorted() {
+            guard let incoming = latestByDay[day] else { continue }
+            let sameDay = existingByDay[day] ?? []
+            if let imported = sameDay.first(where: { $0.source == .health }) {
+                if abs(imported.value - incoming.value) > 0.0001 {
+                    plan.updates[imported.id] = incoming.value
+                }
+            } else if sameDay.contains(where: { $0.source == .manual && abs($0.value - incoming.value) <= 0.1 }) {
+                continue
+            } else {
+                plan.inserts.append(.init(date: incoming.date, value: incoming.value))
+            }
+        }
+        return plan
     }
 }

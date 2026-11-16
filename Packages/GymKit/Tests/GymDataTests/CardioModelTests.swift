@@ -113,4 +113,21 @@ final class CardioModelTests: XCTestCase {
         try context.save()
         XCTAssertEqual(try context.fetch(FetchDescriptor<VO2MaxReading>()).map(\.value), [46.5])
     }
+
+    func testVO2MaxImportFromHealthIsIdempotent() throws {
+        let calendar = GymCalendar.make(timeZone: TimeZone(identifier: "UTC")!)
+        let day = 86_400.0
+        try VO2MaxReading.log(value: 45.2, at: now, in: context)
+        let dates = [now.addingTimeInterval(-30 * day), now.addingTimeInterval(60)]
+        var result = try VO2MaxReading.importFromHealth(values: [44.1, 45.2], dates: dates, in: context, calendar: calendar)
+        try context.save()
+        XCTAssertEqual(result.inserted, 1) // la de hoy ya estaba apuntada a mano
+        result = try VO2MaxReading.importFromHealth(values: [44.1, 45.2], dates: dates, in: context, calendar: calendar)
+        try context.save()
+        XCTAssertEqual(result.inserted, 0)
+        XCTAssertEqual(result.updated, 0)
+        let readings = try context.fetch(FetchDescriptor<VO2MaxReading>(sortBy: [SortDescriptor(\.measuredAt)]))
+        XCTAssertEqual(readings.map(\.value), [44.1, 45.2])
+        XCTAssertEqual(readings.map(\.source), [.health, .manual])
+    }
 }
