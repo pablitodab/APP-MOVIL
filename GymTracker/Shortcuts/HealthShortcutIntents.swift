@@ -104,31 +104,45 @@ struct GetPendingHealthWorkoutsIntent: AppIntent {
 struct MarkWorkoutLoggedInHealthIntent: AppIntent {
     static let title: LocalizedStringResource = "Marcar entrenamiento como registrado en Salud"
     static let description = IntentDescription(
-        "Ponlo justo después de «Registrar entrenamiento» para que GymTracker no lo vuelva a enviar.",
+        "Ponlo dentro de «Repetir con cada elemento», justo después de «Registrar entrenamiento». En «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento»: sin él no se marca, para que GymTracker nunca diga que está en Salud si no lo está.",
         categoryName: "Salud"
     )
 
     @Parameter(title: "Entrenamiento")
     var workout: PendingHealthWorkout
 
+    // Texto: App Intents no tiene un tipo para muestras de Salud y Atajos convierte el
+    // resultado de «Registrar entrenamiento» en texto. Se guarda para el diagnóstico.
+    // Opcional para explicar el error si falta, en vez de que Atajos pida escribir algo.
+    @Parameter(title: "Entrenamiento registrado")
+    var loggedWorkout: String?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Marcar \(\.$workout) como registrado en Salud")
+        Summary("Marcar \(\.$workout) como registrado en Salud con \(\.$loggedWorkout)")
     }
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        let loggedSample = try HealthWorkoutConfirmation.loggedSample(from: loggedWorkout)
         let dependencies = AppDependencies.shared
-        if case .success(let container) = dependencies.persistence,
-           let stored = try fetchWorkout(workout.id, in: container.mainContext),
-           stored.healthKitWorkoutID == nil {
-            // Atajos no devuelve el UUID del registro de Salud: se marca con el id del
-            // propio entrenamiento, que solo sirve para saber que ya está en Salud.
-            stored.healthKitWorkoutID = stored.id
+        guard case .success(let container) = dependencies.persistence else {
+            throw ShortcutsBridgeIntentError.databaseUnavailable
+        }
+        if let stored = try fetchWorkout(workout.id, in: container.mainContext) {
+            stored.markLoggedInHealthViaShortcut()
             try container.mainContext.save()
         }
-        try await dependencies.bridgeStore.removePending([workout.id])
+        try await dependencies.bridgeStore.confirmLogged(workoutID: workout.id, loggedSample: loggedSample)
         NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
         return .result()
+    }
+}
+
+enum ShortcutsBridgeIntentError: Error, LocalizedError {
+    case databaseUnavailable
+
+    var errorDescription: String? {
+        "GymTracker no puede abrir su base de datos. Abre la app para ver el error."
     }
 }
 

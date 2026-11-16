@@ -134,13 +134,14 @@ extension Workout {
 
     /// Guarda el entrenamiento terminado en Salud y apunta el UUID devuelto.
     ///
-    /// Si ya estaba sincronizado no hace nada (evita duplicados en Salud).
+    /// Si ya estaba sincronizado no hace nada (evita duplicados en Salud). Una marca antigua
+    /// sin confirmar (`hasUnverifiedHealthMark`) no cuenta: se vuelve a enviar.
     /// El entrenamiento ya está guardado en local antes de llamar aquí: si Salud falla,
     /// el error se propaga para mostrarlo, pero no se pierde nada.
     @MainActor
     @discardableResult
     public func syncToHealth(using service: any HealthService, context: ModelContext) async throws -> UUID {
-        if let healthKitWorkoutID {
+        if let healthKitWorkoutID, isSyncedToHealth {
             return healthKitWorkoutID
         }
         guard let record = healthRecord, record.isValid else {
@@ -150,6 +151,20 @@ extension Workout {
         healthKitWorkoutID = savedID
         try context.save()
         return savedID
+    }
+
+    /// Modo Atajos: el atajo confirmó que «Registrar entrenamiento» creó el entrenamiento en
+    /// Salud. Atajos no devuelve el UUID de Salud, así que se apunta uno propio, distinto
+    /// de `id` para no confundirlo con las marcas antiguas sin confirmar. No guarda el
+    /// contexto. Si ya estaba confirmado, no cambia nada.
+    @discardableResult
+    public func markLoggedInHealthViaShortcut() -> UUID {
+        if let healthKitWorkoutID, isSyncedToHealth {
+            return healthKitWorkoutID
+        }
+        let marker = UUID()
+        healthKitWorkoutID = marker
+        return marker
     }
 }
 
