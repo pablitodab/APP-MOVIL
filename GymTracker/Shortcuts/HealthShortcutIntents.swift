@@ -148,6 +148,8 @@ enum HealthDataOption: String, AppEnum {
     case basalKcal
     case exerciseMinutes
     case bodyMassKg
+    /// Va a la base de datos de la app (`VO2MaxReading`), no al puente de totales diarios.
+    case vo2Max
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Dato de Salud"
     static let caseDisplayRepresentations: [HealthDataOption: DisplayRepresentation] = [
@@ -157,9 +159,11 @@ enum HealthDataOption: String, AppEnum {
         .basalKcal: "Calorías en reposo (kcal)",
         .exerciseMinutes: "Minutos de ejercicio",
         .bodyMassKg: "Peso (kg)",
+        .vo2Max: "VO2max (ml/kg/min)",
     ]
 
-    var metric: HealthBridgeMetric {
+    /// `nil` para el VO2max, que no es un total diario.
+    var metric: HealthBridgeMetric? {
         switch self {
         case .steps: return .steps
         case .distanceKm: return .distanceKm
@@ -167,6 +171,7 @@ enum HealthDataOption: String, AppEnum {
         case .basalKcal: return .basalKcal
         case .exerciseMinutes: return .exerciseMinutes
         case .bodyMassKg: return .bodyMassKg
+        case .vo2Max: return nil
         }
     }
 }
@@ -196,14 +201,46 @@ struct SaveHealthDataIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        let parsed = try ShortcutsInputParser.parse(values: values, dates: dates, calendar: GymCalendar.make())
+        let calendar = GymCalendar.make()
+        let parsed = try ShortcutsInputParser.parse(values: values, dates: dates, calendar: calendar)
+        guard let metric = data.metric else {
+            return .result(value: try importVO2Max(parsed, calendar: calendar))
+        }
         let updated = try await AppDependencies.shared.bridgeStore.importValues(
-            data.metric,
+            metric,
             values: parsed.values,
             dates: parsed.dates
         )
         NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
         let what = data == .bodyMassKg ? "Peso actualizado" : "Días actualizados"
         return .result(value: "\(what): \(updated) · valores recibidos: \(parsed.values.count)")
+    }
+
+    /// El VO2max no es diario (el reloj lo estima solo en algunas sesiones al aire libre),
+    /// así que necesita las fechas reales de cada muestra.
+    @MainActor
+    private func importVO2Max(_ parsed: (values: [Double], dates: [Date], datesWereInferred: Bool), calendar: Calendar) throws -> String {
+        guard !parsed.datesWereInferred else { throw VO2MaxImportError.missingDates }
+        guard case .success(let container) = AppDependencies.shared.persistence else {
+            throw VO2MaxImportError.databaseUnavailable
+        }
+        let context = container.mainContext
+        let result = try VO2MaxReading.importFromHealth(values: parsed.values, dates: parsed.dates, in: context, calendar: calendar)
+        try context.save()
+        return "VO2max: \(result.inserted) lecturas nuevas, \(result.updated) actualizadas · valores recibidos: \(parsed.values.count)"
+    }
+}
+
+enum VO2MaxImportError: Error, LocalizedError {
+    case missingDates
+    case databaseUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .missingDates:
+            return "Para el VO2max rellena también «Fechas» con la propiedad Fecha de inicio de las muestras: no hay una lectura cada día."
+        case .databaseUnavailable:
+            return "GymTracker no puede abrir su base de datos. Abre la app para ver el error."
+        }
     }
 }

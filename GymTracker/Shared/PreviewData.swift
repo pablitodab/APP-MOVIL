@@ -80,6 +80,8 @@ enum PreviewData {
             torso.addExercise(row, targetSets: 2)
             torso.lastUsedAt = calendar.date(byAdding: .day, value: -1, to: .now)
 
+            try addCardio(in: context, calendar: calendar)
+
             guard includesWorkoutInProgress else {
                 try context.save()
                 return container
@@ -99,6 +101,53 @@ enum PreviewData {
             return container
         } catch {
             fatalError("No se pudieron crear los datos de preview: \(error)")
+        }
+    }
+
+    /// Cardio de ejemplo: cinta caminando y corriendo con mejora de ritmo, bici y VO2max.
+    private static func addCardio(in context: ModelContext, calendar: Calendar) throws {
+        let treadmill = try CardioActivity.create(named: "Cinta", equipment: .treadmill, muscles: CardioEquipment.treadmill.suggestedMuscles, in: context)
+        let bike = try CardioActivity.create(named: "Bici estática", equipment: .bike, muscles: CardioEquipment.bike.suggestedMuscles, in: context)
+        _ = try CardioActivity.create(named: "Elíptica", equipment: .elliptical, muscles: CardioEquipment.elliptical.suggestedMuscles, in: context)
+
+        func day(_ daysAgo: Int, hour: Int) -> Date {
+            let start = calendar.date(byAdding: .day, value: -daysAgo, to: calendar.startOfDay(for: .now)) ?? .now
+            return calendar.date(bySettingHour: hour, minute: 30, second: 0, of: start) ?? start
+        }
+
+        // Carrera en cinta: 5 km cada vez algo más rápidos.
+        for (index, daysAgo) in [38, 31, 24, 17, 10, 2].enumerated() {
+            let seconds = Double(31 * 60 - index * 45)
+            try CardioSession.log(
+                CardioSessionInput(
+                    date: day(daysAgo, hour: 8), durationSeconds: seconds, distanceKm: 5, gait: .running,
+                    inclinePercent: 1, speedKmh: (5 / (seconds / 3600) * 10).rounded() / 10,
+                    rpe: 8 - (index > 3 ? 1 : 0), averageHeartRate: 162 - index * 2, maxHeartRate: 178 - index
+                ),
+                activity: treadmill, in: context
+            )
+        }
+        // Caminar inclinado tras pesas.
+        for (index, daysAgo) in [33, 26, 19, 12, 5, 1].enumerated() {
+            try CardioSession.log(
+                CardioSessionInput(
+                    date: day(daysAgo, hour: 20), durationSeconds: 20 * 60, distanceKm: 1.9 + Double(index) * 0.05,
+                    gait: .walking, inclinePercent: 10 + Double(index % 3), speedKmh: 5.8, rpe: 5, averageHeartRate: 128
+                ),
+                activity: treadmill, in: context
+            )
+        }
+        for (index, daysAgo) in [29, 15, 8, 4].enumerated() {
+            try CardioSession.log(
+                CardioSessionInput(
+                    date: day(daysAgo, hour: 19), durationSeconds: Double(30 + index * 5) * 60,
+                    distanceKm: 12 + Double(index) * 2.5, level: 8 + Double(index), rpe: 6
+                ),
+                activity: bike, in: context
+            )
+        }
+        for (daysAgo, value) in [(84, 44.1), (56, 45.0), (28, 45.6), (3, 46.4)] {
+            try VO2MaxReading.log(value: value, at: day(daysAgo, hour: 9), in: context)
         }
     }
 }

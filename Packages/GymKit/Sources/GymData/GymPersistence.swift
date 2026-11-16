@@ -39,15 +39,28 @@ public enum GymSchemaV3: VersionedSchema {
     }
 }
 
+/// Versión 4: añade cardio (`CardioActivity`, `CardioSession`) y lecturas de VO2max.
+/// Solo modelos nuevos sin relaciones con los anteriores: migración ligera desde V3.
+///
+/// **No tocar** `ExerciseMuscles` sin congelar antes una copia de V3.
+public enum GymSchemaV4: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(4, 0, 0)
+
+    public static var models: [any PersistentModel.Type] {
+        GymSchemaV3.models + [CardioActivity.self, CardioSession.self, VO2MaxReading.self]
+    }
+}
+
 /// Esquema actual de la app.
-public typealias GymSchemaCurrent = GymSchemaV3
+public typealias GymSchemaCurrent = GymSchemaV4
 
 public enum GymMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self] }
+    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self] }
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
             .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
+            .lightweight(fromVersion: GymSchemaV3.self, toVersion: GymSchemaV4.self),
         ]
     }
 }
