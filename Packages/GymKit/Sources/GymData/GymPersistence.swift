@@ -26,13 +26,29 @@ public enum GymSchemaV2: VersionedSchema {
     }
 }
 
+/// Versión 3: añade los músculos de cada ejercicio (`ExerciseMuscles`). Otra vez solo un
+/// modelo nuevo, así que la migración desde V2 también es ligera.
+///
+/// **No tocar** `WorkoutTemplate`, `TemplateExercise` ni `ExerciseSetTarget` sin congelar
+/// antes una copia de V2, por el mismo motivo que en V1.
+public enum GymSchemaV3: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    public static var models: [any PersistentModel.Type] {
+        GymSchemaV2.models + [ExerciseMuscles.self]
+    }
+}
+
 /// Esquema actual de la app.
-public typealias GymSchemaCurrent = GymSchemaV2
+public typealias GymSchemaCurrent = GymSchemaV3
 
 public enum GymMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self] }
+    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self] }
     public static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self)]
+        [
+            .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
+            .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
+        ]
     }
 }
 

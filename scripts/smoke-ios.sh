@@ -80,4 +80,6 @@ for appearance in light dark; do
   shot "$appearance-2-en-curso" -tab workouts
   shot "$appearance-3-registro" -tab workouts -openActiveWorkout
   shot "$appearance-4-progreso" -tab progress
+  shot "$appearance-5-ejercicios" -tab workouts -noActiveWorkout -exercises
+  shot "$appearance-6-nuevo-ejercicio" -tab workouts -noActiveWorkout -exercises -newExercise
 done

@@ -23,6 +23,10 @@ enum PreviewData {
             let row = try ExerciseDefinition.findOrCreate(named: "Remo con mancuerna", in: context)
             let squat = try ExerciseDefinition.findOrCreate(named: "Sentadilla", in: context)
             let deadlift = try ExerciseDefinition.findOrCreate(named: "Peso muerto rumano", in: context)
+            try bench.setMuscles([.chest, .triceps, .shoulders], in: context)
+            try row.setMuscles([.back, .biceps], in: context)
+            try squat.setMuscles([.quadriceps, .glutes], in: context)
+            try deadlift.setMuscles([.hamstrings, .glutes, .lowerBack], in: context)
 
             /// Entrenamiento terminado hace `daysAgo` días, empezando a las `hour`.
             func addWorkout(daysAgo: Int, hour: Int, minutes: Int, title: String, build: (Workout) -> Void) throws {

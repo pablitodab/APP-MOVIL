@@ -9,6 +9,14 @@ private enum InstalledV1Plan: SchemaMigrationPlan {
     static var stages: [MigrationStage] { [] }
 }
 
+/// Plan de la versión con plantillas (V1 y V2), la instalada antes de los músculos.
+private enum InstalledV2Plan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self)]
+    }
+}
+
 /// Comprueba que una base de datos creada por la versión anterior (V1) se abre con el
 /// esquema actual sin perder nada. Usa un archivo real, no memoria, porque la migración
 /// solo ocurre con un almacén en disco.
@@ -67,5 +75,49 @@ final class MigrationTests: XCTestCase {
         let next = try Workout.start(in: context, at: start.addingTimeInterval(86_400), from: template)
         try context.save()
         XCTAssertEqual(next.orderedExercises.first?.plannedSets(target: 2).last, SetSample(weightKg: 80, reps: 8))
+
+        // V3: los músculos se pueden asignar a un ejercicio ya existente.
+        let bench = try XCTUnwrap(workout.orderedExercises.first?.definition)
+        XCTAssertEqual(try bench.muscles(in: context), [])
+        try bench.setMuscles([.triceps, .chest], in: context)
+        try context.save()
+        XCTAssertEqual(try bench.muscles(in: context), [.chest, .triceps])
+    }
+
+    func testStoreFromV2OpensWithCurrentSchemaAndKeepsTemplates() throws {
+        let url = directory.appendingPathComponent("GymTracker.store")
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let templateID: UUID
+
+        do {
+            let schema = Schema(versionedSchema: GymSchemaV2.self)
+            let configuration = ModelConfiguration("GymTracker", schema: schema, url: url, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, migrationPlan: InstalledV2Plan.self, configurations: [configuration])
+            let context = ModelContext(container)
+            let workout = Workout(startedAt: start, title: "Pierna", bodyWeightKg: 80)
+            context.insert(workout)
+            let entry = workout.addExercise(try ExerciseDefinition.findOrCreate(named: "Sentadilla", in: context))
+            entry.addSet(weightKg: 100, reps: 5)
+            try workout.finish(at: start.addingTimeInterval(3600))
+            let template = WorkoutTemplate.make(from: workout, name: "Pierna A", in: context)
+            try context.save()
+            templateID = template.id
+        }
+
+        let container = try GymPersistence.makeContainer(storeURL: url)
+        let context = ModelContext(container)
+        let workouts = try context.fetch(FetchDescriptor<Workout>())
+        XCTAssertEqual(workouts.count, 1)
+        XCTAssertEqual(workouts.first?.orderedExercises.first?.samples, [SetSample(weightKg: 100, reps: 5)])
+        let templates = try context.fetch(FetchDescriptor<WorkoutTemplate>())
+        XCTAssertEqual(templates.map(\.id), [templateID])
+        XCTAssertEqual(templates.first?.name, "Pierna A")
+        XCTAssertEqual(templates.first?.orderedExercises.first?.exerciseName, "Sentadilla")
+
+        // La tabla nueva existe y está vacía: los ejercicios antiguos quedan sin músculos.
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseMuscles>()), 0)
+        let created = try ExerciseDefinition.create(named: "Prensa", muscles: [.quadriceps, .glutes], in: context)
+        try context.save()
+        XCTAssertEqual(try created.muscles(in: context), [.glutes, .quadriceps])
     }
 }

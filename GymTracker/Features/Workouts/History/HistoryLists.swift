@@ -170,78 +170,213 @@ struct DateTile: View {
     }
 }
 
-/// Secciones del historial por ejercicio: cada ejercicio hecho al menos una vez.
+/// Secciones del historial por ejercicio: botón para crear ejercicios, filtro por músculo,
+/// los ejercicios hechos (por último uso) y los creados que aún no se han hecho.
 struct ExerciseHistorySections: View {
     let searchText: String
+    let onCreate: () -> Void
 
+    @Environment(\.modelContext) private var context
     @Query(sort: \ExerciseDefinition.name) private var definitions: [ExerciseDefinition]
+    @Query private var muscleRows: [ExerciseMuscles]
+    @State private var filter: MuscleFilter = .all
 
-    init(searchText: String) {
+    init(searchText: String, onCreate: @escaping () -> Void) {
         self.searchText = searchText
+        self.onCreate = onCreate
+    }
+
+    enum MuscleFilter: Hashable {
+        case all
+        case muscle(MuscleGroup)
+        case unassigned
     }
 
     private struct Item: Identifiable {
         let definition: ExerciseDefinition
-        let lastEntry: WorkoutExercise
+        let muscles: [MuscleGroup]
+        let lastEntry: WorkoutExercise?
         let sessions: Int
         var id: UUID { definition.id }
     }
 
     var body: some View {
-        let items = self.items
+        let musclesByID = ExerciseMuscles.byDefinition(muscleRows)
+        let all = allItems(musclesByID)
+        let options = filterOptions(all)
+        // Si el músculo elegido ya no está en la lista (se editó o se buscó otra cosa), todos.
+        let active = options.contains(filter) ? filter : .all
+        let items = filtered(all, by: active)
+        let used = items.filter { $0.lastEntry != nil }
+        let unused = items.filter { $0.lastEntry == nil }
+
+        Section {
+            Button(action: onCreate) {
+                Label("Crear ejercicio", systemImage: "plus")
+            }
+            .buttonStyle(SecondaryActionButtonStyle())
+            .plainListRow()
+        }
+
+        if options.count > 1 {
+            Section {
+                filterBar(options, active: active)
+                    .plainListRow()
+            }
+        }
+
         if items.isEmpty {
             Section {
-                if searchText.isEmpty {
+                if !searchText.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                } else if active != .all {
+                    ContentUnavailableView(
+                        "Ningún ejercicio",
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        description: Text("No hay ejercicios con ese músculo.")
+                    )
+                } else {
                     ContentUnavailableView(
                         "Sin ejercicios",
                         systemImage: "chart.line.uptrend.xyaxis",
-                        description: Text("Aquí verás la progresión de cada ejercicio cuando termines entrenamientos.")
+                        description: Text("Crea tus ejercicios o añádelos en un entrenamiento. Aquí verás la progresión de cada uno.")
                     )
-                } else {
-                    ContentUnavailableView.search(text: searchText)
                 }
             }
         } else {
-            Section("Ordenados por último uso") {
-                ForEach(items) { item in
-                    NavigationLink(value: WorkoutRoute.exercise(item.definition)) {
-                        HStack(spacing: Theme.Spacing.m) {
-                            IconBadge(systemImage: "dumbbell.fill", size: 40)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.definition.name)
-                                    .font(.headline)
-                                Text(subtitle(for: item))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 2)
+            if !used.isEmpty {
+                Section("Ordenados por último uso") {
+                    ForEach(used) { item in
+                        row(item)
                     }
+                }
+            }
+            if !unused.isEmpty {
+                Section {
+                    ForEach(unused) { item in
+                        row(item)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                if item.definition.isUnused {
+                                    Button(role: .destructive) {
+                                        delete(item.definition)
+                                    } label: {
+                                        Label("Eliminar", systemImage: "trash")
+                                    }
+                                }
+                            }
+                    }
+                } header: {
+                    Text("Sin sesiones todavía")
+                } footer: {
+                    Text("Aparecerán arriba cuando termines un entrenamiento con ellos. Desliza para eliminar uno que no vayas a usar.")
                 }
             }
         }
     }
 
-    private var items: [Item] {
+    private func row(_ item: Item) -> some View {
+        NavigationLink(value: WorkoutRoute.exercise(item.definition)) {
+            HStack(spacing: Theme.Spacing.m) {
+                IconBadge(systemImage: "dumbbell.fill", size: 40)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.definition.name)
+                        .font(.headline)
+                    MuscleSummaryText(muscles: item.muscles)
+                    Text(subtitle(for: item))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func filterBar(_ options: [MuscleFilter], active: MuscleFilter) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.s) {
+                ForEach(options, id: \.self) { option in
+                    MuscleChip(title: title(for: option), isSelected: active == option) {
+                        filter = option
+                    }
+                    .fixedSize()
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.l)
+        }
+        .scrollClipDisabled()
+        .sensoryFeedback(.selection, trigger: filter)
+    }
+
+    /// "Todos", los músculos que tiene algún ejercicio y "Sin músculo" si a alguno le falta.
+    private func filterOptions(_ all: [Item]) -> [MuscleFilter] {
+        let used = MuscleGroup.canonical(all.flatMap(\.muscles))
+        var options: [MuscleFilter] = [.all] + used.map { .muscle($0) }
+        if !used.isEmpty, all.contains(where: { $0.muscles.isEmpty }) {
+            options.append(.unassigned)
+        }
+        return options
+    }
+
+    private func title(for option: MuscleFilter) -> String {
+        switch option {
+        case .all: return "Todos"
+        case .muscle(let muscle): return muscle.displayName
+        case .unassigned: return "Sin músculo"
+        }
+    }
+
+    private func allItems(_ musclesByID: [UUID: [MuscleGroup]]) -> [Item] {
         let key = ExerciseName.normalizedKey(searchText)
         return definitions
             .filter { key.isEmpty || $0.normalizedName.contains(key) }
-            .compactMap { definition in
+            .map { definition in
                 let entries = definition.completedEntries
-                guard let last = entries.first else { return nil }
-                return Item(definition: definition, lastEntry: last, sessions: entries.count)
+                return Item(
+                    definition: definition,
+                    muscles: musclesByID[definition.id] ?? [],
+                    lastEntry: entries.first,
+                    sessions: entries.count
+                )
             }
-            .sorted { ($0.lastEntry.performedAt ?? .distantPast) > ($1.lastEntry.performedAt ?? .distantPast) }
+            .sorted { lhs, rhs in
+                let left = lhs.lastEntry?.performedAt ?? .distantPast
+                let right = rhs.lastEntry?.performedAt ?? .distantPast
+                if left != right { return left > right }
+                return lhs.definition.name.localizedStandardCompare(rhs.definition.name) == .orderedAscending
+            }
+    }
+
+    private func filtered(_ items: [Item], by filter: MuscleFilter) -> [Item] {
+        switch filter {
+        case .all: return items
+        case .muscle(let muscle): return items.filter { $0.muscles.contains(muscle) }
+        case .unassigned: return items.filter { $0.muscles.isEmpty }
+        }
     }
 
     private func subtitle(for item: Item) -> String {
+        guard let last = item.lastEntry else {
+            // Puede tener entradas en el entrenamiento en curso, aún sin terminar.
+            return item.definition.isUnused ? "Aún sin sesiones" : "En el entrenamiento en curso"
+        }
         var parts = ["\(item.sessions) \(item.sessions == 1 ? "sesión" : "sesiones")"]
-        if let date = item.lastEntry.performedAt {
+        if let date = last.performedAt {
             parts.append("última \(WorkoutFormat.day(date))")
         }
-        if let top = item.lastEntry.stats.topSet {
+        if let top = last.stats.topSet {
             parts.append("mejor serie \(WorkoutFormat.set(top))")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func delete(_ definition: ExerciseDefinition) {
+        // Solo los que no aparecen en ningún entrenamiento: borrar otro perdería historial.
+        guard definition.isUnused else { return }
+        do {
+            try definition.deleteFromCatalog(in: context)
+        } catch {
+            context.delete(definition)
+        }
+        context.saveNow()
     }
 }

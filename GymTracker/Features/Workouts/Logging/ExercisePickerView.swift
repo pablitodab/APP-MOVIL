@@ -3,7 +3,7 @@ import SwiftData
 import GymCore
 import GymData
 
-/// Elegir un ejercicio del catálogo o crear uno nuevo escribiendo su nombre.
+/// Elegir un ejercicio del catálogo o crear uno nuevo (nombre y músculos).
 /// Los más usados recientemente aparecen primero.
 struct ExercisePickerView: View {
     let onSelect: (ExerciseDefinition) -> Void
@@ -11,9 +11,15 @@ struct ExercisePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \ExerciseDefinition.name) private var definitions: [ExerciseDefinition]
+    @Query private var muscleRows: [ExerciseMuscles]
 
     @State private var searchText = ""
-    @State private var errorMessage: String? = nil
+    /// Nombre con el que se abre el formulario de ejercicio nuevo.
+    @State private var newExerciseName: NewExerciseName? = nil
+
+    private struct NewExerciseName: Hashable {
+        let value: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,20 +36,25 @@ struct ExercisePickerView: View {
                 }
 
                 let items = filtered
+                let musclesByID = ExerciseMuscles.byDefinition(muscleRows)
                 if !items.isEmpty {
                     Section(listTitle) {
                         ForEach(items) { definition in
                             Button {
                                 select(definition)
                             } label: {
-                                ExercisePickerRow(definition: definition)
+                                ExercisePickerRow(definition: definition, muscles: musclesByID[definition.id] ?? [])
                             }
                             .foregroundStyle(.primary)
                             .deleteDisabled(!definition.isUnused)
                         }
                         .onDelete { offsets in
                             for index in offsets where items[index].isUnused {
-                                context.delete(items[index])
+                                do {
+                                    try items[index].deleteFromCatalog(in: context)
+                                } catch {
+                                    context.delete(items[index])
+                                }
                             }
                             context.saveNow()
                         }
@@ -55,7 +66,7 @@ struct ExercisePickerView: View {
                     ContentUnavailableView(
                         "Escribe un ejercicio",
                         systemImage: "dumbbell",
-                        description: Text("Busca arriba, p. ej. «Press banca», y pulsa Crear. La próxima vez aparecerá en la lista.")
+                        description: Text("Busca arriba, p. ej. «Press banca», y pulsa Crear, o usa el botón +. La próxima vez aparecerá en la lista.")
                     )
                 }
             }
@@ -77,14 +88,18 @@ struct ExercisePickerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        create()
+                    } label: {
+                        Label("Crear ejercicio", systemImage: "plus")
+                    }
+                }
             }
-            .alert(
-                "No se pudo crear el ejercicio",
-                isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
-            ) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage ?? "")
+            .navigationDestination(item: $newExerciseName) { name in
+                ExerciseFormView(mode: .create(initialName: name.value), showsCancel: false) { definition in
+                    select(definition)
+                }
             }
         }
     }
@@ -114,13 +129,9 @@ struct ExercisePickerView: View {
         }
     }
 
+    /// Abre el formulario (nombre y músculos) con lo escrito en la búsqueda.
     private func create() {
-        do {
-            let definition = try ExerciseDefinition.findOrCreate(named: searchText, in: context)
-            select(definition)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        newExerciseName = NewExerciseName(value: canCreate ? searchText : "")
     }
 
     private func select(_ definition: ExerciseDefinition) {
@@ -131,11 +142,13 @@ struct ExercisePickerView: View {
 
 private struct ExercisePickerRow: View {
     let definition: ExerciseDefinition
+    let muscles: [MuscleGroup]
 
     var body: some View {
         let lastEntry = definition.completedEntries.first
         VStack(alignment: .leading, spacing: 2) {
             Text(definition.name)
+            MuscleSummaryText(muscles: muscles)
             if let lastEntry, let date = lastEntry.performedAt {
                 Text("\(WorkoutFormat.day(date)) · \(WorkoutFormat.sets(lastEntry.samples, limit: 3))")
                     .font(.caption)

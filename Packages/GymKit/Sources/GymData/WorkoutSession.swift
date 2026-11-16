@@ -168,6 +168,65 @@ extension WorkoutExercise {
     }
 }
 
+/// Series pendientes del entrenamiento en curso.
+///
+/// Una serie solo se guarda como `WorkoutSet` cuando se marca como hecha (✓); hasta entonces
+/// es "pendiente" y vive como `ExerciseSetTarget.targetSets` (= hechas + pendientes).
+/// Así las estadísticas nunca cuentan series que no se hicieron. Lo usan tanto las plantillas
+/// como "Añadir serie" durante el entrenamiento.
+extension WorkoutExercise {
+    /// Series pendientes de marcar (0 si no hay objetivo).
+    public func pendingSetCount(in context: ModelContext) throws -> Int {
+        guard let target = try setTarget(in: context) else { return 0 }
+        return max(0, target.targetSets - sets.count)
+    }
+
+    /// Fija cuántas series quedan pendientes (crea el objetivo si no existía).
+    public func setPendingSets(_ count: Int, in context: ModelContext) throws {
+        let total = sets.count + max(0, count)
+        if let target = try setTarget(in: context) {
+            target.targetSets = total
+        } else if let workoutID = workout?.id {
+            context.insert(ExerciseSetTarget(workoutExerciseID: id, workoutID: workoutID, targetSets: total))
+        }
+    }
+
+    /// Marca como hecha la siguiente serie pendiente con los valores indicados.
+    @discardableResult
+    public func completeSet(_ sample: SetSample, in context: ModelContext) throws -> WorkoutSet {
+        let pending = try pendingSetCount(in: context)
+        let set = addSet(weightKg: sample.weightKg, reps: sample.reps, effort: sample.effort, side: sample.side)
+        try setPendingSets(max(0, pending - 1), in: context)
+        return set
+    }
+
+    /// Desmarca la última serie hecha: deja de guardarse y vuelve a quedar pendiente.
+    /// Devuelve sus valores para que la fila pendiente los conserve.
+    @discardableResult
+    public func uncompleteLastSet(in context: ModelContext) throws -> SetSample? {
+        guard let last = orderedSets.last else { return nil }
+        let pending = try pendingSetCount(in: context)
+        let sample = last.sample
+        deleteSets(atOffsets: [orderedSets.count - 1], in: context)
+        try setPendingSets(pending + 1, in: context)
+        return sample
+    }
+
+    /// Borra series hechas sin cambiar cuántas quedan pendientes.
+    public func deleteCompletedSets(atOffsets offsets: IndexSet, in context: ModelContext) throws {
+        let pending = try pendingSetCount(in: context)
+        deleteSets(atOffsets: offsets, in: context)
+        try setPendingSets(pending, in: context)
+    }
+
+    private func setTarget(in context: ModelContext) throws -> ExerciseSetTarget? {
+        let id = self.id
+        var descriptor = FetchDescriptor<ExerciseSetTarget>(predicate: #Predicate { $0.workoutExerciseID == id })
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+}
+
 extension WorkoutExercise {
     /// Series de este ejercicio la última vez que se hizo (en otro entrenamiento terminado anterior).
     public var previousSamples: [SetSample] {
