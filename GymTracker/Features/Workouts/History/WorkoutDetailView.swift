@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import SwiftData
 import GymCore
 import GymData
@@ -14,11 +15,14 @@ struct WorkoutDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.healthService) private var healthService
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     @Query(filter: #Predicate<Workout> { $0.endedAt != nil }, sort: \Workout.startedAt, order: .reverse)
     private var finishedWorkouts: [Workout]
 
     @State private var isSyncing = false
+    /// Modo Atajos: está en la cola y el atajo aún no ha confirmado que lo registró.
+    @State private var isPendingInShortcut = false
     @State private var healthError: String? = nil
     @State private var confirmingDelete = false
     @State private var deleteOnDisappear = false
@@ -81,6 +85,14 @@ struct WorkoutDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(healthError ?? "")
+        }
+        .task { await refreshPending() }
+        .onReceive(NotificationCenter.default.publisher(for: .healthBridgeDidChange)) { _ in
+            Task { await refreshPending() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Al volver de Atajos (x-callback) se comprueba si el atajo lo confirmó.
+            if phase == .active { Task { await refreshPending() } }
         }
         .confirmationDialog("¿Eliminar este entrenamiento?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Eliminar", role: .destructive) {
@@ -145,13 +157,34 @@ struct WorkoutDetailView: View {
         }
     }
 
+    private var shortcutStore: HealthBridgeStore? {
+        (healthService as? ShortcutsHealthService)?.store
+    }
+
+    // «Registrado en Salud» solo con confirmación real: HealthKit devolvió el UUID o el
+    // atajo pasó el resultado de «Registrar entrenamiento». Lo demás se dice tal cual.
     @ViewBuilder
     private var healthSection: some View {
         Section {
             if workout.isSyncedToHealth {
                 Label("Registrado en Salud", systemImage: "heart.fill")
                     .foregroundStyle(Theme.health)
-            } else if healthService.isHealthDataAvailable {
+            } else if !healthService.isHealthDataAvailable {
+                Label("Salud no disponible: no registrado", systemImage: "heart.slash")
+                    .foregroundStyle(.secondary)
+            } else if isPendingInShortcut {
+                Label("Pendiente de registrar en Salud", systemImage: "clock")
+                    .foregroundStyle(.orange)
+                Button {
+                    openURL(HealthShortcuts.runURL(HealthShortcuts.exportName))
+                } label: {
+                    Label("Ejecutar «\(HealthShortcuts.exportName)»", systemImage: "arrow.up.heart")
+                }
+            } else {
+                if workout.hasUnverifiedHealthMark {
+                    Label("Sin confirmar en Salud", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
                 Button {
                     Task { await syncToHealth() }
                 } label: {
@@ -162,11 +195,36 @@ struct WorkoutDetailView: View {
                     }
                 }
                 .disabled(isSyncing)
-            } else {
-                Label("Salud no disponible: no registrado", systemImage: "heart.slash")
-                    .foregroundStyle(.secondary)
+            }
+        } footer: {
+            if let footer = healthFooter {
+                Text(footer)
             }
         }
+    }
+
+    private var healthFooter: String? {
+        guard healthService.isHealthDataAvailable else { return nil }
+        let viaShortcuts = shortcutStore != nil
+        if workout.isSyncedToHealth {
+            return viaShortcuts
+                ? "Confirmado por el atajo: «Registrar entrenamiento» devolvió el entrenamiento creado."
+                : nil
+        }
+        if isPendingInShortcut {
+            return "El atajo no ha confirmado que lo registrara. En «\(HealthShortcuts.exportName)», «Registrar entrenamiento» y «Marcar entrenamiento como registrado en Salud» deben ir dentro de «Repetir con cada elemento»."
+        }
+        if workout.hasUnverifiedHealthMark {
+            return "Una versión anterior lo marcó sin comprobar que llegara a Salud. Míralo en Salud › Entrenamientos antes de registrarlo. Si ya lo grabaste con el reloj (Lyfta, Entreno…), no lo registres: saldría dos veces."
+        }
+        return viaShortcuts
+            ? "Si ya lo grabaste con el reloj (Lyfta, Entreno…), no lo registres: saldría dos veces en Salud."
+            : nil
+    }
+
+    private func refreshPending() async {
+        guard let shortcutStore else { return }
+        isPendingInShortcut = await shortcutStore.isPending(workout.id)
     }
 
     private func exerciseSection(_ exercise: WorkoutExercise) -> some View {
@@ -219,6 +277,7 @@ struct WorkoutDetailView: View {
         do {
             try await workout.syncToHealth(using: healthService, context: context)
         } catch HealthServiceError.pendingShortcut {
+            isPendingInShortcut = true
             openURL(HealthShortcuts.runURL(HealthShortcuts.exportName))
         } catch {
             healthError = error.localizedDescription

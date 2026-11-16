@@ -128,6 +128,19 @@ struct HealthDiagnosticsView: View {
                 LabeledContent("Peso", value: "\(weight.kg.formatted(.number.precision(.fractionLength(0...1)))) kg")
             }
             LabeledContent("Entrenamientos pendientes de enviar", value: "\(report.bridge?.pendingWorkouts.count ?? 0)")
+            LabeledContent("Última confirmación de «Registrar entrenamiento»") {
+                if let last = report.bridge?.confirmedWorkouts.last {
+                    VStack(alignment: .trailing) {
+                        Text(last.confirmedAt, format: .relative(presentation: .named))
+                        Text(last.loggedSample)
+                            .font(.caption.monospaced())
+                            .lineLimit(3)
+                            .textSelection(.enabled)
+                    }
+                } else {
+                    Text("Ninguna").foregroundStyle(.secondary)
+                }
+            }
             Button {
                 openURL(HealthShortcuts.runURL(HealthShortcuts.importName))
             } label: {
@@ -256,6 +269,11 @@ final class HealthDiagnosticsReport {
         lines.append("Modo: \(mode == .shortcuts ? "Atajos" : mode == .healthKit ? "HealthKit" : "sin Salud")")
         if let bridge {
             lines.append("Atajos: último envío \(bridge.lastImportAt?.formatted() ?? "nunca") · \(bridge.days.count) días · peso \(bridge.bodyMass.map { "\($0.kg) kg" } ?? "—") · \(bridge.pendingWorkouts.count) entrenos pendientes")
+            if let last = bridge.confirmedWorkouts.last {
+                lines.append("Última confirmación: \(last.confirmedAt.formatted()) · «\(last.loggedSample)»")
+            } else {
+                lines.append("Última confirmación: ninguna")
+            }
         }
         lines.append("Salud disponible: \(healthDataAvailable ? "sí" : "no")")
         lines.append("Estado de la solicitud: \(requestStatus ?? "—")")

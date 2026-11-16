@@ -17,6 +17,9 @@ public final class Workout {
     /// Calorías activas estimadas al terminar (ver `CalorieCalculator`).
     public var estimatedActiveKcal: Double?
     /// UUID del `HKWorkout` guardado en Salud; `nil` si aún no se ha sincronizado.
+    /// En modo Atajos es un UUID propio, porque Atajos no devuelve el de Salud
+    /// (ver `markLoggedInHealthViaShortcut()`). Si vale `id`, es una marca antigua sin
+    /// confirmar (ver `hasUnverifiedHealthMark`).
     public var healthKitWorkoutID: UUID?
 
     @Relationship(deleteRule: .cascade, inverse: \WorkoutExercise.workout)
@@ -47,7 +50,17 @@ public final class Workout {
 
     public var isInProgress: Bool { endedAt == nil }
 
-    public var isSyncedToHealth: Bool { healthKitWorkoutID != nil }
+    /// Está en Salud con confirmación: guardado por HealthKit o marcado por el atajo con
+    /// el resultado de «Registrar entrenamiento».
+    public var isSyncedToHealth: Bool {
+        guard let healthKitWorkoutID else { return false }
+        return healthKitWorkoutID != id
+    }
+
+    /// Marcado como registrado por una versión anterior del atajo, que no comprobaba que
+    /// «Registrar entrenamiento» se hubiera ejecutado (guardaba el propio `id`). Puede no
+    /// estar en Salud: la interfaz lo muestra como «sin confirmar» y permite reenviarlo.
+    public var hasUnverifiedHealthMark: Bool { healthKitWorkoutID == id }
 
     public var duration: TimeInterval? {
         endedAt.map { $0.timeIntervalSince(startedAt) }

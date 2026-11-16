@@ -160,4 +160,72 @@ final class ShortcutsHealthBridgeTests: XCTestCase {
             XCTAssertEqual(error as? HealthServiceError, .invalidWorkout)
         }
     }
+
+    // MARK: Confirmación de «Registrar entrenamiento»
+
+    func testLoggedSampleIsRequiredToMarkAWorkout() throws {
+        for missing in [nil, "", "  \n "] as [String?] {
+            XCTAssertThrowsError(try HealthWorkoutConfirmation.loggedSample(from: missing)) { error in
+                XCTAssertEqual(error as? HealthBridgeError, .missingLoggedWorkout)
+            }
+        }
+        XCTAssertEqual(try HealthWorkoutConfirmation.loggedSample(from: "  Fuerza tradicional \n"), "Fuerza tradicional")
+        let long = String(repeating: "x", count: 1000)
+        XCTAssertEqual(try HealthWorkoutConfirmation.loggedSample(from: long).count, 300)
+    }
+
+    func testConfirmLoggedRemovesFromQueueAndKeepsProof() async throws {
+        let store = HealthBridgeStore(fileURL: nil, calendar: calendar)
+        let logged = HealthWorkoutRecord(workoutID: UUID(), start: try day(10, hour: 18), end: try day(10, hour: 19), activeEnergyKcal: 300)
+        let other = HealthWorkoutRecord(workoutID: UUID(), start: try day(11, hour: 18), end: try day(11, hour: 19), activeEnergyKcal: 280)
+        try await store.enqueue(logged)
+        try await store.enqueue(other)
+
+        try await store.confirmLogged(workoutID: logged.workoutID, loggedSample: "Fuerza tradicional", now: try day(12))
+
+        let state = await store.snapshot()
+        XCTAssertEqual(state.pendingWorkouts, [other])
+        XCTAssertEqual(state.confirmedWorkouts, [
+            HealthWorkoutConfirmation(workoutID: logged.workoutID, confirmedAt: try day(12), loggedSample: "Fuerza tradicional"),
+        ])
+        let loggedIsPending = await store.isPending(logged.workoutID)
+        let otherIsPending = await store.isPending(other.workoutID)
+        XCTAssertFalse(loggedIsPending)
+        XCTAssertTrue(otherIsPending)
+    }
+
+    func testConfirmationsAreCapped() async throws {
+        let store = HealthBridgeStore(fileURL: nil, calendar: calendar)
+        let ids = (0..<(HealthBridgeState.maxConfirmations + 5)).map { _ in UUID() }
+        for id in ids {
+            try await store.confirmLogged(workoutID: id, loggedSample: "x")
+        }
+        // Confirmar dos veces el mismo no lo duplica.
+        try await store.confirmLogged(workoutID: ids.last!, loggedSample: "y")
+        let confirmed = await store.snapshot().confirmedWorkouts
+        XCTAssertEqual(confirmed.count, HealthBridgeState.maxConfirmations)
+        XCTAssertEqual(confirmed.last?.workoutID, ids.last)
+        XCTAssertEqual(confirmed.last?.loggedSample, "y")
+        XCTAssertFalse(confirmed.contains { $0.workoutID == ids.first })
+    }
+
+    func testFileFromPreviousVersionStillLoads() async throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let record = HealthWorkoutRecord(workoutID: UUID(), start: try day(10, hour: 18), end: try day(10, hour: 19), activeEnergyKcal: 310)
+        let store = HealthBridgeStore(fileURL: url, calendar: calendar)
+        try await store.importValues(.steps, values: [7000], dates: [try day(10)], now: try day(11))
+        try await store.enqueue(record)
+
+        // Archivo como lo escribía la versión anterior: sin «confirmedWorkouts».
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json.removeValue(forKey: "confirmedWorkouts")
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+
+        let state = await HealthBridgeStore(fileURL: url, calendar: calendar).snapshot()
+        XCTAssertEqual(state.days.map(\.steps), [7000])
+        XCTAssertEqual(state.pendingWorkouts, [record])
+        XCTAssertEqual(state.lastImportAt, try day(11))
+        XCTAssertTrue(state.confirmedWorkouts.isEmpty)
+    }
 }

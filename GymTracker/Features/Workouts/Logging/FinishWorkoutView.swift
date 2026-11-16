@@ -23,7 +23,9 @@ struct FinishWorkoutView: View {
     @State private var intensity: WorkoutIntensity
     @State private var bodyWeightKg: Double
     @State private var bodyWeightSource: String? = nil
-    @State private var saveToHealth = true
+    /// Se recuerda entre entrenamientos: quien graba el entreno con el reloj lo desactiva
+    /// una vez para no tener cada sesión dos veces en Salud.
+    @AppStorage("health.saveFinishedWorkouts") private var saveToHealth = true
     @State private var isSaving = false
     @State private var errorMessage: String? = nil
     @State private var healthWarning: String? = nil
@@ -56,8 +58,8 @@ struct FinishWorkoutView: View {
                 } footer: {
                     if healthService.isHealthDataAvailable {
                         Text(healthService is ShortcutsHealthService
-                             ? "Se abrirá el atajo «\(HealthShortcuts.exportName)», que lo registra en Salud como entrenamiento de fuerza y vuelve aquí."
-                             : "Se registra como entrenamiento de fuerza con las calorías activas estimadas.")
+                             ? "Se abrirá el atajo «\(HealthShortcuts.exportName)», que lo registra en Salud como entrenamiento de fuerza y vuelve aquí. Si grabas el entreno con el Apple Watch (Lyfta, Entreno…), desactívalo: ya está en Salud y saldría dos veces. Se recuerda tu elección."
+                             : "Se registra como entrenamiento de fuerza con las calorías activas estimadas. Si grabas el entreno con el Apple Watch, desactívalo: saldría dos veces en Salud. Se recuerda tu elección.")
                     } else {
                         Text("Salud no está disponible en este dispositivo o versión de la app. El entrenamiento se guarda igualmente en el historial.")
                     }

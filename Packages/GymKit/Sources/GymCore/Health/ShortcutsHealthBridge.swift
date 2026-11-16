@@ -8,7 +8,9 @@ import Foundation
 // - «Salud a GymTracker»: el atajo lee de Salud los totales diarios y se los pasa a la
 //   app, que los guarda aquí (`HealthBridgeStore.importValues`).
 // - «GymTracker a Salud»: el atajo pide los entrenamientos pendientes, los registra con
-//   «Registrar entrenamiento» y los marca como registrados.
+//   «Registrar entrenamiento» y los marca como registrados pasando el resultado de esa
+//   acción. Sin ese resultado no se marcan: la app nunca dice «Registrado en Salud» si el
+//   atajo no ha creado de verdad el entrenamiento.
 //
 // Los datos guardados son solo lo que llega de Salud: nunca se inventan valores.
 
@@ -33,6 +35,30 @@ public struct BodyMassReading: Codable, Equatable, Sendable {
     }
 }
 
+/// Prueba de que el atajo registró un entrenamiento en Salud: el texto con el que Atajos
+/// entrega el resultado de «Registrar entrenamiento». Se guarda para el diagnóstico.
+public struct HealthWorkoutConfirmation: Codable, Equatable, Sendable {
+    public let workoutID: UUID
+    public let confirmedAt: Date
+    public let loggedSample: String
+
+    public init(workoutID: UUID, confirmedAt: Date, loggedSample: String) {
+        self.workoutID = workoutID
+        self.confirmedAt = confirmedAt
+        self.loggedSample = loggedSample
+    }
+
+    /// Comprueba que el atajo pasó el resultado de «Registrar entrenamiento». Si falta, el
+    /// entrenamiento no se marca: lo más probable es que esa acción no esté en el atajo.
+    public static func loggedSample(from text: String?) throws -> String {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { throw HealthBridgeError.missingLoggedWorkout }
+        return String(trimmed.prefix(maxSampleLength))
+    }
+
+    static let maxSampleLength = 300
+}
+
 /// Todo lo que guarda el puente. Se persiste como JSON.
 public struct HealthBridgeState: Codable, Equatable, Sendable {
     /// Un resumen por día con datos, ordenado por día.
@@ -40,19 +66,44 @@ public struct HealthBridgeState: Codable, Equatable, Sendable {
     public var bodyMass: BodyMassReading? = nil
     /// Entrenamientos que el atajo debe registrar en Salud, en orden de llegada.
     public var pendingWorkouts: [HealthWorkoutRecord] = []
+    /// Últimos entrenamientos confirmados por el atajo, el más reciente al final.
+    public var confirmedWorkouts: [HealthWorkoutConfirmation] = []
     /// Última vez que el atajo envió datos de Salud.
     public var lastImportAt: Date? = nil
 
+    /// Cuántas confirmaciones se guardan (solo sirven para el diagnóstico).
+    public static let maxConfirmations = 30
+
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case days, bodyMass, pendingWorkouts, confirmedWorkouts, lastImportAt
+    }
+
+    // Decodificación tolerante: un archivo de una versión anterior (sin las claves nuevas)
+    // se sigue leyendo en vez de perder los datos importados de Salud.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        days = try container.decodeIfPresent([HealthDaySummary].self, forKey: .days) ?? []
+        bodyMass = try container.decodeIfPresent(BodyMassReading.self, forKey: .bodyMass)
+        pendingWorkouts = try container.decodeIfPresent([HealthWorkoutRecord].self, forKey: .pendingWorkouts) ?? []
+        confirmedWorkouts = try container.decodeIfPresent([HealthWorkoutConfirmation].self, forKey: .confirmedWorkouts) ?? []
+        lastImportAt = try container.decodeIfPresent(Date.self, forKey: .lastImportAt)
+    }
 }
 
 public enum HealthBridgeError: Error, Equatable, LocalizedError, Sendable {
     case mismatchedCounts(values: Int, dates: Int)
     case invalidValue(Double)
     case storageFailed(String)
+    /// «Marcar entrenamiento como registrado en Salud» llegó sin el resultado de
+    /// «Registrar entrenamiento»: no hay prueba de que el entrenamiento esté en Salud.
+    case missingLoggedWorkout
 
     public var errorDescription: String? {
         switch self {
+        case .missingLoggedWorkout:
+            return "No se ha marcado como registrado en Salud: falta «Entrenamiento registrado». Dentro de «Repetir con cada elemento» pon primero «Registrar entrenamiento» y después «Marcar entrenamiento como registrado en Salud», y en su campo «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento». Pasos en la guía de Atajos."
         case .mismatchedCounts(let values, let dates):
             return "El atajo envió \(values) valores y \(dates) fechas; deben ser el mismo número. Revisa que «Valores» y «Fechas» salgan de la misma búsqueda de Salud, o deja «Fechas» vacío."
         case .invalidValue(let value):
@@ -156,6 +207,25 @@ public actor HealthBridgeStore {
         state.pendingWorkouts
     }
 
+    /// Saca de la cola un entrenamiento que el atajo ha registrado en Salud y guarda la
+    /// prueba (el resultado de «Registrar entrenamiento») para el diagnóstico.
+    public func confirmLogged(workoutID: UUID, loggedSample: String, now: Date = .now) throws {
+        state.pendingWorkouts.removeAll { $0.workoutID == workoutID }
+        state.confirmedWorkouts.removeAll { $0.workoutID == workoutID }
+        state.confirmedWorkouts.append(
+            HealthWorkoutConfirmation(workoutID: workoutID, confirmedAt: now, loggedSample: loggedSample)
+        )
+        let overflow = state.confirmedWorkouts.count - HealthBridgeState.maxConfirmations
+        if overflow > 0 {
+            state.confirmedWorkouts.removeFirst(overflow)
+        }
+        try persist()
+    }
+
+    public func isPending(_ workoutID: UUID) -> Bool {
+        state.pendingWorkouts.contains { $0.workoutID == workoutID }
+    }
+
     /// Quita de la cola los entrenamientos indicados (registrados o que ya no existen).
     public func removePending(_ workoutIDs: Set<UUID>) throws {
         let before = state.pendingWorkouts.count
@@ -200,7 +270,8 @@ extension HealthDaySummary {
 /// - Lectura: devuelve lo que envió el atajo «Salud a GymTracker». Antes del primer envío
 ///   lanza `.shortcutsNotSynced` para que la interfaz explique qué falta, en vez de ceros.
 /// - Escritura: `saveWorkout` encola el entrenamiento y lanza `.pendingShortcut`; la vista
-///   lanza entonces el atajo «GymTracker a Salud», que lo registra y lo marca.
+///   lanza entonces el atajo «GymTracker a Salud», que lo registra y lo marca. Solo se
+///   marca con el resultado de «Registrar entrenamiento» (ver `HealthWorkoutConfirmation`).
 public final class ShortcutsHealthService: HealthService {
     public let store: HealthBridgeStore
     private let calendar: Calendar

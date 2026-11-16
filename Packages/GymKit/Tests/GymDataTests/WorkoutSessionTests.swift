@@ -176,6 +176,41 @@ final class WorkoutSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyShortcutMarkIsUnverifiedAndCanBeResent() async throws {
+        let workout = try finishedWorkout(daysAgo: 0, exercise: "Remo", sets: [(60, 10, .normal, .bilateral)])
+        // Así marcaba la versión anterior del atajo, sin comprobar «Registrar entrenamiento».
+        workout.healthKitWorkoutID = workout.id
+        XCTAssertFalse(workout.isSyncedToHealth)
+        XCTAssertTrue(workout.hasUnverifiedHealthMark)
+
+        let health = InMemoryHealthService()
+        let id = try await workout.syncToHealth(using: health, context: context)
+        XCTAssertNotEqual(id, workout.id)
+        XCTAssertTrue(workout.isSyncedToHealth)
+        XCTAssertFalse(workout.hasUnverifiedHealthMark)
+        let saved = await health.savedWorkouts
+        XCTAssertEqual(saved.count, 1)
+    }
+
+    @MainActor
+    func testShortcutConfirmationMarksWithOwnMarker() throws {
+        let workout = try finishedWorkout(daysAgo: 0, exercise: "Remo", sets: [(60, 10, .normal, .bilateral)])
+        XCTAssertFalse(workout.isSyncedToHealth)
+        XCTAssertFalse(workout.hasUnverifiedHealthMark)
+
+        let marker = workout.markLoggedInHealthViaShortcut()
+        XCTAssertNotEqual(marker, workout.id)
+        XCTAssertTrue(workout.isSyncedToHealth)
+        XCTAssertFalse(workout.hasUnverifiedHealthMark)
+        XCTAssertEqual(workout.markLoggedInHealthViaShortcut(), marker)
+
+        let legacy = try finishedWorkout(daysAgo: 1, exercise: "Remo", sets: [(60, 10, .normal, .bilateral)])
+        legacy.healthKitWorkoutID = legacy.id
+        XCTAssertNotEqual(legacy.markLoggedInHealthViaShortcut(), legacy.id)
+        XCTAssertTrue(legacy.isSyncedToHealth)
+    }
+
+    @MainActor
     func testSyncFailureKeepsWorkoutSavedLocally() async throws {
         let workout = try finishedWorkout(daysAgo: 0, exercise: "Remo", sets: [(60, 10, .normal, .bilateral)])
         do {
