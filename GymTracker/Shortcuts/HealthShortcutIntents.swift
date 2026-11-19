@@ -70,46 +70,69 @@ struct PendingHealthWorkoutQuery: EntityQuery {
 
 // MARK: - App → Salud
 
+/// Un entrenamiento por ejecución y sin bucle. Dentro de «Repetir con cada elemento»,
+/// Atajos no siempre deja elegir las propiedades del elemento (Inicio, Duración, Kcal), y
+/// si se eligen las de la acción de lista llegan listas a «Registrar entrenamiento», que
+/// falla con un error genérico. Con un solo entrenamiento, sus propiedades son una fecha
+/// y dos cantidades sueltas que «Registrar entrenamiento» acepta.
+struct GetNextPendingHealthWorkoutIntent: AppIntent {
+    static let title: LocalizedStringResource = "Próximo entrenamiento para Salud"
+    static let description = IntentDescription(
+        "Devuelve el entrenamiento más antiguo de GymTracker pendiente de registrar en Salud. En «Registrar entrenamiento» usa sus propiedades Inicio, Duración y Kcal. Sin «Repetir»: un entrenamiento cada vez que se ejecuta el atajo.",
+        categoryName: "Salud"
+    )
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<PendingHealthWorkout> {
+        guard let next = try await currentPendingWorkouts().first else {
+            throw ShortcutsBridgeIntentError.nothingPending
+        }
+        return .result(value: PendingHealthWorkout(record: next))
+    }
+}
+
 struct GetPendingHealthWorkoutsIntent: AppIntent {
     static let title: LocalizedStringResource = "Entrenamientos pendientes para Salud"
     static let description = IntentDescription(
-        "Devuelve los entrenamientos terminados en GymTracker que aún no están en Salud. Úsalo con «Repetir con cada elemento» y «Registrar entrenamiento».",
+        "Devuelve todos los entrenamientos pendientes de registrar en Salud. Para el atajo «GymTracker a Salud» es más fiable «Próximo entrenamiento para Salud», sin bucle.",
         categoryName: "Salud"
     )
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<[PendingHealthWorkout]> {
-        let dependencies = AppDependencies.shared
-        let pending = await dependencies.bridgeStore.pendingWorkouts()
+        .result(value: try await currentPendingWorkouts().map(PendingHealthWorkout.init(record:)))
+    }
+}
 
-        // Limpia la cola: entrenamientos borrados de la app o ya registrados.
-        var stale = Set<UUID>()
-        if case .success(let container) = dependencies.persistence {
-            for record in pending {
-                let workout = try fetchWorkout(record.workoutID, in: container.mainContext)
-                if workout == nil || workout?.isSyncedToHealth == true {
-                    stale.insert(record.workoutID)
-                }
+/// Cola del atajo sin los entrenamientos borrados de la app o ya registrados, que se
+/// quitan también del almacén. En orden de llegada.
+@MainActor
+private func currentPendingWorkouts() async throws -> [HealthWorkoutRecord] {
+    let dependencies = AppDependencies.shared
+    let pending = await dependencies.bridgeStore.pendingWorkouts()
+    var stale = Set<UUID>()
+    if case .success(let container) = dependencies.persistence {
+        for record in pending {
+            let workout = try fetchWorkout(record.workoutID, in: container.mainContext)
+            if workout == nil || workout?.isSyncedToHealth == true {
+                stale.insert(record.workoutID)
             }
         }
-        try await dependencies.bridgeStore.removePending(stale)
-
-        let result = pending
-            .filter { !stale.contains($0.workoutID) }
-            .map(PendingHealthWorkout.init(record:))
-        return .result(value: result)
     }
+    try await dependencies.bridgeStore.removePending(stale)
+    return pending.filter { !stale.contains($0.workoutID) }
 }
 
 struct MarkWorkoutLoggedInHealthIntent: AppIntent {
     static let title: LocalizedStringResource = "Marcar entrenamiento como registrado en Salud"
     static let description = IntentDescription(
-        "Ponlo dentro de «Repetir con cada elemento», justo después de «Registrar entrenamiento». En «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento»: sin él no se marca, para que GymTracker nunca diga que está en Salud si no lo está.",
+        "Ponlo justo después de «Registrar entrenamiento». En «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento»: sin él no se marca, para que GymTracker nunca diga que está en Salud si no lo está. «Entrenamiento» vacío = el próximo pendiente.",
         categoryName: "Salud"
     )
 
+    /// Vacío: el próximo pendiente, el mismo que devuelve «Próximo entrenamiento para Salud».
     @Parameter(title: "Entrenamiento")
-    var workout: PendingHealthWorkout
+    var workout: PendingHealthWorkout?
 
     // Texto: App Intents no tiene un tipo para muestras de Salud y Atajos convierte el
     // resultado de «Registrar entrenamiento» en texto. Se guarda para el diagnóstico.
@@ -128,11 +151,19 @@ struct MarkWorkoutLoggedInHealthIntent: AppIntent {
         guard case .success(let container) = dependencies.persistence else {
             throw ShortcutsBridgeIntentError.databaseUnavailable
         }
-        if let stored = try fetchWorkout(workout.id, in: container.mainContext) {
+        let workoutID: UUID
+        if let workout {
+            workoutID = workout.id
+        } else if let next = try await currentPendingWorkouts().first {
+            workoutID = next.workoutID
+        } else {
+            throw ShortcutsBridgeIntentError.nothingPending
+        }
+        if let stored = try fetchWorkout(workoutID, in: container.mainContext) {
             stored.markLoggedInHealthViaShortcut()
             try container.mainContext.save()
         }
-        try await dependencies.bridgeStore.confirmLogged(workoutID: workout.id, loggedSample: loggedSample)
+        try await dependencies.bridgeStore.confirmLogged(workoutID: workoutID, loggedSample: loggedSample)
         NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
         return .result()
     }
@@ -140,9 +171,15 @@ struct MarkWorkoutLoggedInHealthIntent: AppIntent {
 
 enum ShortcutsBridgeIntentError: Error, LocalizedError {
     case databaseUnavailable
+    case nothingPending
 
     var errorDescription: String? {
-        "GymTracker no puede abrir su base de datos. Abre la app para ver el error."
+        switch self {
+        case .databaseUnavailable:
+            return "GymTracker no puede abrir su base de datos. Abre la app para ver el error."
+        case .nothingPending:
+            return "No hay entrenamientos pendientes de registrar en Salud. Termina un entreno con «Guardar en Salud» activado o pulsa «Registrar en Salud» en su detalle."
+        }
     }
 }
 

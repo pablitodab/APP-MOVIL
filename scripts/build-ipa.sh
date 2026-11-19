@@ -65,13 +65,13 @@ if [[ ! -f "$INTENTS_DATA" ]]; then
   echo "Faltan los metadatos de App Intents: Atajos no vería las acciones de GymTracker." >&2
   exit 1
 fi
-for intent in GetPendingHealthWorkoutsIntent MarkWorkoutLoggedInHealthIntent SaveHealthDataIntent; do
+for intent in GetNextPendingHealthWorkoutIntent GetPendingHealthWorkoutsIntent MarkWorkoutLoggedInHealthIntent SaveHealthDataIntent; do
   if ! grep -q "$intent" "$INTENTS_DATA"; then
     echo "La acción $intent no está en los metadatos de App Intents." >&2
     exit 1
   fi
 done
-echo "Acciones de Atajos incluidas: GetPendingHealthWorkouts, MarkWorkoutLoggedInHealth, SaveHealthData"
+echo "Acciones de Atajos incluidas: GetNextPendingHealthWorkout, GetPendingHealthWorkouts, MarkWorkoutLoggedInHealth, SaveHealthData"
 
 (cd "$STAGING" && zip -qry ../GymTracker.ipa Payload)
 echo "IPA generado: build/GymTracker.ipa ($(du -h build/GymTracker.ipa | cut -f1))"

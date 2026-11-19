@@ -212,7 +212,7 @@ struct WorkoutDetailView: View {
                 : nil
         }
         if isPendingInShortcut {
-            return "El atajo no ha confirmado que lo registrara. En «\(HealthShortcuts.exportName)», «Registrar entrenamiento» y «Marcar entrenamiento como registrado en Salud» deben ir dentro de «Repetir con cada elemento»."
+            return "El atajo no ha confirmado que lo registrara. En «\(HealthShortcuts.exportName)» van, en este orden y sin «Repetir»: «Próximo entrenamiento para Salud», «Registrar entrenamiento» y «Marcar entrenamiento como registrado en Salud»."
         }
         if workout.hasUnverifiedHealthMark {
             return "Una versión anterior lo marcó sin comprobar que llegara a Salud. Míralo en Salud › Entrenamientos antes de registrarlo. Si ya lo grabaste con el reloj (Lyfta, Entreno…), no lo registres: saldría dos veces."
