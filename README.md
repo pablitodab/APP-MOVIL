@@ -42,7 +42,7 @@ Por qué el IPA lleva una firma ad-hoc: Sideloadly toma los *entitlements* (perm
 Con Sideloadly y un Apple ID gratuito la app no puede usar HealthKit (ver arriba), pero la app **Atajos** sí lee y escribe en Salud. La app lo detecta sola (el perfil de la firma no tiene HealthKit) y cambia a este modo:
 
 - **Leer:** el atajo «Salud a GymTracker» busca en Salud los totales por día y se los pasa a la app con la acción *Guardar datos de Salud en GymTracker*. Se guardan en `Application Support/HealthBridge.json` (`HealthBridgeStore`). Antes del primer envío, Progreso dice que falta el atajo en vez de mostrar ceros.
-- **Escribir:** al terminar un entrenamiento con "Guardar en Salud", la app lo deja en cola y abre el atajo «GymTracker a Salud», que lo registra con *Registrar entrenamiento*, lo marca con *Marcar entrenamiento como registrado en Salud* y vuelve a la app. Solo se marca si el atajo pasa el resultado de *Registrar entrenamiento* (`HealthWorkoutConfirmation`); si no, el detalle lo muestra como pendiente. Las marcas de versiones anteriores, que no lo comprobaban (`healthKitWorkoutID == id`), salen como «Sin confirmar en Salud» y se pueden reenviar.
+- **Escribir:** al terminar un entrenamiento con "Guardar en Salud", la app lo deja en cola y abre el atajo «GymTracker a Salud», que toma el más antiguo con *Próximo entrenamiento para Salud* (sin bucle: dentro de «Repetir» Atajos no expone las propiedades del ítem), lo registra con *Registrar entrenamiento*, lo marca con *Marcar entrenamiento como registrado en Salud* y vuelve a la app. Solo se marca si el atajo pasa el resultado de *Registrar entrenamiento* (`HealthWorkoutConfirmation`); si no, el detalle lo muestra como pendiente. Las marcas de versiones anteriores, que no lo comprobaban (`healthKitWorkoutID == id`), salen como «Sin confirmar en Salud» y se pueden reenviar.
 - Botones para ejecutar los dos atajos y el estado del puente (último envío, días, pendientes) en *Progreso → estetoscopio*. En Progreso, el botón de flechas ejecuta «Salud a GymTracker».
 
 Los nombres de los atajos tienen que ser **exactamente** «Salud a GymTracker» y «GymTracker a Salud» (`HealthShortcuts`). Los nombres de las acciones de Atajos pueden variar un poco según la versión de iOS.
@@ -78,31 +78,32 @@ Si el atajo tarda mucho, cambia "el último año" por "los últimos 35 días": l
 
 ### Atajo 2: «GymTracker a Salud»
 
-El atajo tiene **cuatro acciones** y las dos del medio van **dentro** del bucle, entre «Repetir con cada elemento» y «Terminar repetición». Después de «Terminar repetición» no va nada.
+Tres acciones, **sin «Repetir»**. Cada vez que se ejecuta registra un entrenamiento: el más antiguo pendiente.
 
 ```
-Entrenamientos pendientes para Salud
-Repetir con cada elemento en  [Entrenamientos pendientes para Salud]
-    Registrar entrenamiento
-    Marcar [Elemento repetido] como registrado en Salud con [Entrenamiento registrado]
-Terminar repetición
+Próximo entrenamiento para Salud
+Registrar entrenamiento   (Fecha = Inicio · Duración = Duración · Calorías = Kcal · Distancia = 0)
+Marcar como registrado en Salud con [Entrenamiento registrado]
 ```
 
-1. **Entrenamientos pendientes para Salud** (de GymTracker).
-2. **Repetir con cada elemento** con la lista anterior. Atajos añade solo «Terminar repetición» debajo.
-3. Arrastra dentro del bucle **Registrar entrenamiento** (app Salud; búscala como "Registrar entrenamiento" o "Log Workout"):
-   - *Tipo*: el de fuerza ("Fuerza tradicional" o similar).
-   - *Fecha*: toca el campo → *Seleccionar variable* → *Elemento repetido* → propiedad **Inicio**.
-   - *Duración*: *Elemento repetido* → **Minutos**, unidad **min**.
-   - *Calorías*: *Elemento repetido* → **Kcal**, unidad **kcal**.
-   - *Distancia*: **0** (si se deja vacía, la acción falla).
-4. Debajo, también dentro del bucle, **Marcar entrenamiento como registrado en Salud** (de GymTracker):
-   - *Entrenamiento*: **Elemento repetido**.
-   - *Entrenamiento registrado*: toca el campo → *Seleccionar variable* → toca la acción **Registrar entrenamiento** de justo encima. Es su resultado.
+Si ya tienes el atajo con «Repetir con cada ítem», bórralo entero y créalo de nuevo así. Dentro de ese bucle Atajos no deja elegir Inicio, Duración ni Kcal del ítem, y si se eligen los de la acción de arriba llegan listas en vez de un valor y «Registrar entrenamiento» falla con «Ha habido un problema al ejecutar el atajo».
+
+1. **Próximo entrenamiento para Salud** (de GymTracker; busca "Próximo entrenamiento").
+2. **Registrar entrenamiento** (de Salud; puede llamarse "Registrar entreno"):
+   - *Tipo*: el de fuerza ("Entreno funcional de fuerza", "Fuerza tradicional" o similar).
+   - *Fecha*: toca el campo → *Seleccionar variable* → toca la acción **Próximo entrenamiento para Salud** → en la ficha que aparece, tócala otra vez y elige **Inicio**.
+   - *Duración*: igual, pero elige **Duración**.
+   - *Calorías*: igual, pero elige **Kcal**; unidad **kcal**.
+   - *Distancia*: escribe **0** (si se deja vacía, la acción falla).
+3. **Marcar entrenamiento como registrado en Salud** (de GymTracker):
+   - *Entrenamiento*: déjalo vacío (se marca el mismo de la acción 1) o elige la acción **Próximo entrenamiento para Salud**.
+   - *Entrenamiento registrado*: toca el campo → *Seleccionar variable* → toca la acción **Registrar entrenamiento**. Es su resultado.
 
 Sin *Entrenamiento registrado* la acción da error y **no** marca nada: es la prueba de que «Registrar entrenamiento» se ejecutó. Así la app nunca dice «Registrado en Salud» si el entrenamiento no se creó.
 
-Si tu atajo tiene «Marcar…» debajo de «Terminar repetición» o el bucle vacío, bórralo y créalo así.
+Si no hay nada pendiente, el atajo para con el mensaje «No hay entrenamientos pendientes…». Si hay varios, ejecútalo una vez por cada uno (o pulsa *Registrar en Salud* en el detalle de cada entreno).
+
+Si en Salud el entreno sale con duración 0, cambia *Duración* por la propiedad **Minutos** y elige la unidad **min**.
 
 **Si grabas el entreno con el Apple Watch** (Lyfta, Entreno…): ese registro ya está en Salud. Al terminar en GymTracker desactiva *Guardar en Salud* (la app recuerda la elección) o tendrás el entrenamiento dos veces.
 

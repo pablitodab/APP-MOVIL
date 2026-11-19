@@ -103,7 +103,7 @@ public enum HealthBridgeError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .missingLoggedWorkout:
-            return "No se ha marcado como registrado en Salud: falta «Entrenamiento registrado». Dentro de «Repetir con cada elemento» pon primero «Registrar entrenamiento» y después «Marcar entrenamiento como registrado en Salud», y en su campo «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento». Pasos en la guía de Atajos."
+            return "No se ha marcado como registrado en Salud: falta «Entrenamiento registrado». Pon «Marcar entrenamiento como registrado en Salud» justo después de «Registrar entrenamiento» y, en su campo «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento». Pasos en la guía de Atajos."
         case .mismatchedCounts(let values, let dates):
             return "El atajo envió \(values) valores y \(dates) fechas; deben ser el mismo número. Revisa que «Valores» y «Fechas» salgan de la misma búsqueda de Salud, o deja «Fechas» vacío."
         case .invalidValue(let value):

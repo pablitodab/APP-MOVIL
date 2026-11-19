@@ -83,6 +83,7 @@ struct HealthDiagnosticsView: View {
 
     private var signingSection: some View {
         Section("Firma de la instalación") {
+            LabeledContent("Versión de la app", value: report.appVersion)
             LabeledContent("Bundle ID", value: report.bundleIdentifier)
             switch report.profile {
             case .none:
@@ -178,6 +179,13 @@ final class HealthDiagnosticsReport {
     }
 
     let bundleIdentifier = Bundle.main.bundleIdentifier ?? "—"
+    /// Con el número de build, que coincide con el del artefacto GymTracker-ipa-N.
+    let appVersion: String = {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (build \(build))"
+    }()
     let healthDataAvailable = HKHealthStore.isHealthDataAvailable()
     let mode = AppDependencies.shared.healthMode
     private(set) var bridge: HealthBridgeState? = nil
@@ -252,7 +260,7 @@ final class HealthDiagnosticsReport {
 
     /// Texto para pegar en un mensaje y compartir el diagnóstico.
     var plainText: String {
-        var lines = ["Diagnóstico de Salud — GymTracker", "Bundle ID: \(bundleIdentifier)"]
+        var lines = ["Diagnóstico de Salud — GymTracker", "Versión: \(appVersion)", "Bundle ID: \(bundleIdentifier)"]
         switch profile {
         case .success(let loaded?):
             lines.append("Perfil: \(loaded.name ?? "—") · equipo \(loaded.teamName ?? "—")")
