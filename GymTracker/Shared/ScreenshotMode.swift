@@ -12,6 +12,7 @@ import Foundation
 /// - `-exercises`: Entrenamientos con la lista de Ejercicios en vez del historial.
 /// - `-newExercise`: abre el formulario de ejercicio nuevo.
 /// - `-newCardio`: abre el formulario para registrar una sesión de cardio.
+/// - `-muscleSets`: Progreso desplazado hasta «Series por músculo».
 ///
 /// Salud usa también datos de ejemplo en memoria, así no aparece la petición de permisos.
 enum ScreenshotMode {
@@ -33,6 +34,8 @@ enum ScreenshotMode {
     static var opensNewExercise: Bool { isEnabled && arguments.contains("-newExercise") }
 
     static var opensCardioForm: Bool { isEnabled && arguments.contains("-newCardio") }
+
+    static var scrollsToMuscleSets: Bool { isEnabled && arguments.contains("-muscleSets") }
 
     static var includesWorkoutInProgress: Bool { !arguments.contains("-noActiveWorkout") }
 }
