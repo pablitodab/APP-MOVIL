@@ -127,3 +127,28 @@ final class MuscleSetStatsTests: XCTestCase {
         XCTAssertEqual(weeks, 26)
     }
 }
+
+final class UnilateralSetCountTests: XCTestCase {
+    private func set(_ side: BodySide, effort: SetEffort = .normal, reps: Int = 10) -> SetSample {
+        SetSample(weightKg: 20, reps: reps, effort: effort, side: side)
+    }
+
+    func testLeftAndRightCountAsOneSet() {
+        XCTAssertEqual(MuscleSetStats.pairedSetCount([set(.left), set(.right), set(.left), set(.right)]), 2)
+    }
+
+    func testUnpairedSideCountsAsTheLongerSide() {
+        XCTAssertEqual(MuscleSetStats.pairedSetCount([set(.left), set(.left), set(.left), set(.right), set(.right)]), 3)
+        XCTAssertEqual(MuscleSetStats.pairedSetCount([set(.right)]), 1)
+    }
+
+    func testBilateralAddsAndWarmupsAndEmptyDoNotCount() {
+        let sets = [set(.bilateral), set(.left, effort: .warmup), set(.right, effort: .warmup), set(.left), set(.right, reps: 0)]
+        XCTAssertEqual(MuscleSetStats.pairedSetCount(sets), 2)
+    }
+
+    func testSessionStatsStillCountEachSide() {
+        // El historial y las comparaciones no cambian: cada lado es una serie.
+        XCTAssertEqual(ExerciseSessionStats(sets: [set(.left), set(.right)]).workingSets, 2)
+    }
+}

@@ -10,7 +10,8 @@ public struct MuscleSetEntry: Equatable, Sendable {
     public let exerciseName: String
     /// Vacío si el ejercicio no tiene músculos asignados.
     public let muscles: [MuscleGroup]
-    /// Series efectivas: sin calentamientos ni series vacías (`SetSample.isWorkingSet`).
+    /// Series efectivas (`pairedSetCount`): sin calentamientos ni series vacías, e
+    /// izquierda + derecha cuentan como una.
     public let workingSets: Int
 
     public init(date: Date, exerciseKey: String, exerciseName: String, muscles: [MuscleGroup], workingSets: Int) {
@@ -27,6 +28,21 @@ public struct MuscleSetEntry: Equatable, Sendable {
 /// Una serie cuenta entera para **cada** músculo de su ejercicio: el catálogo no distingue
 /// músculo principal y secundario, así que no hay base real para repartirla.
 public struct MuscleSetStats: Equatable, Sendable {
+    /// Series efectivas de un ejercicio contando izquierda + derecha como una: las bilaterales
+    /// más el lado con más series (3 izquierdas y 2 derechas son 3 series, no 5).
+    /// Solo para esta métrica: el historial y las comparaciones cuentan cada lado aparte.
+    public static func pairedSetCount(_ sets: [SetSample]) -> Int {
+        var bilateral = 0, left = 0, right = 0
+        for set in sets where set.isWorkingSet {
+            switch set.side {
+            case .bilateral: bilateral += 1
+            case .left: left += 1
+            case .right: right += 1
+            }
+        }
+        return bilateral + max(left, right)
+    }
+
     public struct ExerciseShare: Identifiable, Equatable, Sendable {
         public let key: String
         public let name: String
