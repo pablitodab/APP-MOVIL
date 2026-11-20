@@ -80,6 +80,26 @@ final class WorkoutSessionTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseDefinition>()), 3, "Reutiliza el catálogo")
         let targets = try workout.setTargets(in: context)
         XCTAssertEqual(workout.orderedExercises.map { targets[$0.id] }, [1, 1, 1], "Prevé las series que se hicieron")
+        // Cada ejercicio sugiere lo que se hizo en su posición del entrenamiento repetido.
+        let prefills = try workout.prefills(in: context)
+        XCTAssertEqual(workout.orderedExercises.map { prefills[$0.id]?.samples }, Array(repeating: [SetSample(weightKg: 50, reps: 10)], count: 3))
+        XCTAssertEqual(prefills.values.map(\.sourceWorkoutID), Array(repeating: template.id, count: 3))
+        XCTAssertNil(try workout.templateID(in: context), "El repetido no venía de una plantilla")
+    }
+
+    func testRepeatingTemplateSessionCountsAsSessionOfTemplate() throws {
+        let plan = WorkoutTemplate(name: "Torso")
+        context.insert(plan)
+        plan.addExercise(try ExerciseDefinition.findOrCreate(named: "Press banca", in: context), targetSets: 1)
+        let first = try Workout.start(in: context, at: base.addingTimeInterval(-2 * day), from: plan)
+        try first.orderedExercises[0].completeSet(SetSample(weightKg: 80, reps: 8), in: context)
+        try first.finish(at: first.startedAt.addingTimeInterval(1800))
+        try context.save()
+
+        let again = try Workout.start(in: context, at: base, template: first)
+        try context.save()
+        XCTAssertEqual(try again.templateID(in: context), plan.id)
+        XCTAssertEqual(try again.orderedExercises[0].prefill(in: context)?.samples, [SetSample(weightKg: 80, reps: 8)])
     }
 
     // MARK: Historial por ejercicio
@@ -95,18 +115,29 @@ final class WorkoutSessionTests: XCTestCase {
         let bench = today.addExercise(try ExerciseDefinition.findOrCreate(named: "press banca", in: context))
         try context.save()
 
+        // «Última vez» sigue disponible como información.
         XCTAssertEqual(bench.definition?.previousEntry(before: today)?.samples.last?.weightKg, 80)
+        // Pero un ejercicio añadido a mano no se rellena con ella: no viene de una rutina.
+        XCTAssertNil(try bench.prefill(in: context))
 
-        let first = bench.addSuggestedSet()
+        let previous = [SetSample(weightKg: 40, reps: 12, effort: .warmup), SetSample(weightKg: 80, reps: 8)]
+        let first = bench.addSuggestedSet(previous: previous)
         XCTAssertEqual(first.effort, .warmup)
         XCTAssertEqual(first.weightKg, 40)
-        let second = bench.addSuggestedSet()
+        let second = bench.addSuggestedSet(previous: previous)
         XCTAssertEqual(second.weightKg, 80)
         XCTAssertEqual(second.reps, 8)
-        let third = bench.addSuggestedSet()
+        let third = bench.addSuggestedSet(previous: previous)
         XCTAssertEqual(third.weightKg, 80, "Sin más series previas copia la última de hoy")
         XCTAssertEqual(third.effort, .normal)
         XCTAssertEqual(bench.orderedSets.map(\.orderIndex), [0, 1, 2])
+    }
+
+    func testFreeExerciseStartsEmptyThenCopiesTodaysLastSet() throws {
+        try finishedWorkout(daysAgo: 2, exercise: "Remo", sets: [(80, 8, .normal, .bilateral)])
+        let today = try Workout.start(in: context, at: base)
+        let row = today.addExercise(try ExerciseDefinition.findOrCreate(named: "Remo", in: context))
+        XCTAssertEqual(row.addSuggestedSet().sample, SetSample(weightKg: 0, reps: 0))
     }
 
     func testCompletedEntriesExcludeWorkoutInProgress() throws {

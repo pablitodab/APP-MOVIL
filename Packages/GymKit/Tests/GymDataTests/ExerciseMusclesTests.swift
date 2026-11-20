@@ -72,4 +72,27 @@ final class ExerciseMusclesTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseDefinition>()), 0)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExerciseMuscles>()), 0)
     }
+
+    func testMuscleSetEntriesSkipWarmupsAndCarryMuscles() throws {
+        let bench = try ExerciseDefinition.create(named: "Press banca", muscles: [.chest, .triceps], in: context)
+        let curl = try ExerciseDefinition.findOrCreate(named: "Curl", in: context)
+        let workout = Workout(startedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        context.insert(workout)
+        let benchEntry = workout.addExercise(bench)
+        benchEntry.addSet(weightKg: 40, reps: 10, effort: .warmup)
+        benchEntry.addSet(weightKg: 80, reps: 8)
+        benchEntry.addSet(weightKg: 80, reps: 6, effort: .failure)
+        let curlEntry = workout.addExercise(curl)
+        curlEntry.addSet(weightKg: 12, reps: 12, side: .left)
+        curlEntry.addSet(weightKg: 12, reps: 12, side: .right)
+        try context.save()
+
+        let map = ExerciseMuscles.byDefinition(try context.fetch(FetchDescriptor<ExerciseMuscles>()))
+        let entries = workout.muscleSetEntries(musclesByDefinition: map)
+        XCTAssertEqual(entries.map(\.exerciseName), ["Press banca", "Curl"])
+        XCTAssertEqual(entries.map(\.workingSets), [2, 1])
+        XCTAssertEqual(entries.map(\.muscles), [[.chest, .triceps], []])
+        XCTAssertEqual(entries.first?.exerciseKey, bench.id.uuidString)
+        XCTAssertEqual(entries.first?.date, workout.startedAt)
+    }
 }

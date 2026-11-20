@@ -1,7 +1,7 @@
 import Foundation
 
 /// Una serie reducida a lo necesario para calcular estadísticas, sin depender de SwiftData.
-public struct SetSample: Equatable, Sendable {
+public struct SetSample: Equatable, Codable, Sendable {
     public var weightKg: Double
     public var reps: Int
     public var effort: SetEffort

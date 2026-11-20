@@ -25,7 +25,8 @@ struct NumberField: View {
             .multilineTextAlignment(.center)
             .monospacedDigit()
             .focused($isFocused)
-            .foregroundStyle(parse(text) == nil ? Color.red : Color.primary)
+            // Rojo si no es un número; si no, el estilo del contenedor (gris en las sugerencias).
+            .foregroundStyle(parse(text) == nil ? AnyShapeStyle(Color.red) : AnyShapeStyle(.foreground))
             .onAppear { text = format(value) }
             .onChange(of: text) { _, newText in
                 if let parsed = parse(newText), parsed != value {

@@ -28,6 +28,18 @@ private enum InstalledV3Plan: SchemaMigrationPlan {
     }
 }
 
+/// Plan de la versión con cardio (V1–V4), la instalada antes de los valores sugeridos por plantilla.
+private enum InstalledV4Plan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self] }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
+            .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
+            .lightweight(fromVersion: GymSchemaV3.self, toVersion: GymSchemaV4.self),
+        ]
+    }
+}
+
 /// Comprueba que una base de datos creada por la versión anterior (V1) se abre con el
 /// esquema actual sin perder nada. Usa un archivo real, no memoria, porque la migración
 /// solo ocurre con un almacén en disco.
@@ -85,7 +97,9 @@ final class MigrationTests: XCTestCase {
         XCTAssertEqual(template.orderedExercises.first?.targetSets, 2)
         let next = try Workout.start(in: context, at: start.addingTimeInterval(86_400), from: template)
         try context.save()
-        XCTAssertEqual(next.orderedExercises.first?.plannedSets(target: 2).last, SetSample(weightKg: 80, reps: 8))
+        // El entrenamiento antiguo se llama como la plantilla: cuenta como su sesión anterior.
+        let prefill = try XCTUnwrap(try next.orderedExercises.first?.prefill(in: context))
+        XCTAssertEqual(next.orderedExercises.first?.plannedSets(target: 2, previous: prefill.samples).last, SetSample(weightKg: 80, reps: 8))
 
         // V3: los músculos se pueden asignar a un ejercicio ya existente.
         let bench = try XCTUnwrap(workout.orderedExercises.first?.definition)
@@ -173,5 +187,48 @@ final class MigrationTests: XCTestCase {
         try context.save()
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<CardioSession>()), 1)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<VO2MaxReading>()), 1)
+    }
+
+    func testStoreFromV4OpensWithCurrentSchemaAndPrefillsFromTemplateHistory() throws {
+        let url = directory.appendingPathComponent("GymTracker.store")
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let templateID: UUID
+
+        do {
+            let schema = Schema(versionedSchema: GymSchemaV4.self)
+            let configuration = ModelConfiguration("GymTracker", schema: schema, url: url, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, migrationPlan: InstalledV4Plan.self, configurations: [configuration])
+            let context = ModelContext(container)
+            let template = WorkoutTemplate(name: "Torso A")
+            context.insert(template)
+            template.addExercise(try ExerciseDefinition.findOrCreate(named: "Press banca", in: context), targetSets: 2)
+            // Así empezaba la versión instalada un entreno desde una plantilla: con su nombre.
+            let workout = Workout(startedAt: start, title: "Torso A", bodyWeightKg: 80)
+            context.insert(workout)
+            let bench = workout.addExercise(try ExerciseDefinition.findOrCreate(named: "Press banca", in: context))
+            bench.addSet(weightKg: 80, reps: 8)
+            bench.addSet(weightKg: 77.5, reps: 8)
+            try workout.finish(at: start.addingTimeInterval(3600))
+            try VO2MaxReading.log(value: 47, at: start, in: context)
+            try context.save()
+            templateID = template.id
+        }
+
+        let container = try GymPersistence.makeContainer(storeURL: url)
+        let context = ModelContext(container)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Workout>()), 1)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<VO2MaxReading>()), 1)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<WorkoutTemplateUse>()), 0)
+        let template = try XCTUnwrap(try context.fetch(FetchDescriptor<WorkoutTemplate>()).first)
+        XCTAssertEqual(template.id, templateID)
+
+        // V5: el historial antiguo cuenta como sesión de la plantilla y rellena la siguiente.
+        let next = try Workout.start(in: context, at: start.addingTimeInterval(86_400), from: template)
+        try context.save()
+        XCTAssertEqual(try next.templateID(in: context), templateID)
+        XCTAssertEqual(try next.orderedExercises.first?.prefill(in: context)?.samples, [
+            SetSample(weightKg: 80, reps: 8),
+            SetSample(weightKg: 77.5, reps: 8),
+        ])
     }
 }

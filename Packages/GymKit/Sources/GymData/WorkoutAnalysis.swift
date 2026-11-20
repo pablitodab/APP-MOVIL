@@ -77,3 +77,19 @@ extension ExerciseDefinition {
         ExerciseRecords(sessions: completedEntries.map(\.stats))
     }
 }
+
+extension Workout {
+    /// Series efectivas de cada ejercicio con sus músculos, para `MuscleSetStats`.
+    /// - Parameter musclesByDefinition: `ExerciseMuscles.byDefinition(...)`.
+    public func muscleSetEntries(musclesByDefinition: [UUID: [MuscleGroup]]) -> [MuscleSetEntry] {
+        orderedExercises.map { exercise in
+            MuscleSetEntry(
+                date: startedAt,
+                exerciseKey: exercise.definition?.id.uuidString ?? "sin-definicion-\(exercise.id.uuidString)",
+                exerciseName: exercise.name,
+                muscles: exercise.definition.flatMap { musclesByDefinition[$0.id] } ?? [],
+                workingSets: MuscleSetStats.pairedSetCount(exercise.samples)
+            )
+        }
+    }
+}
