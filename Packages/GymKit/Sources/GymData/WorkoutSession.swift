@@ -37,10 +37,12 @@ extension Workout {
 
     /// Empieza un entrenamiento nuevo y lo inserta en `context`.
     ///
-    /// Con `template` copia el título, la intensidad y los ejercicios (en el mismo orden)
-    /// de un entrenamiento anterior: así se repite una rutina. Las series no se copian:
-    /// se apunta cuántas había (`ExerciseSetTarget`) y la app las muestra rellenadas con la
-    /// última vez para marcarlas.
+    /// Con `template` repite un entrenamiento anterior: copia el título, la intensidad y los
+    /// ejercicios (en el mismo orden). Las series no se copian como hechas: se apunta cuántas
+    /// había (`ExerciseSetTarget`) y sus valores como sugerencia (`ExercisePrefill`), cada
+    /// ejercicio con los de su misma posición en ese entrenamiento.
+    /// Si el entrenamiento repetido venía de una plantilla, el nuevo cuenta como otra sesión
+    /// de esa plantilla.
     /// Lanza `WorkoutSessionError.alreadyInProgress` si ya hay uno en curso.
     @discardableResult
     public static func start(
@@ -48,20 +50,35 @@ extension Workout {
         at date: Date = .now,
         template: Workout? = nil
     ) throws -> Workout {
-        let plan = (template?.orderedExercises ?? []).compactMap { entry in
-            entry.definition.map { PlannedExercise(definition: $0, targetSets: entry.sets.count) }
+        guard let template else {
+            return try begin(in: context, at: date, title: "", intensity: .moderate, plan: [], templateID: nil)
+        }
+        let plan = template.orderedExercises.compactMap { entry in
+            entry.definition.map {
+                PlannedExercise(
+                    definition: $0,
+                    targetSets: entry.sets.count,
+                    prefill: entry.sets.isEmpty ? nil : PrefillSource(workout: template, samples: entry.samples)
+                )
+            }
         }
         return try begin(
             in: context,
             at: date,
-            title: template?.title ?? "",
-            intensity: template?.intensity ?? .moderate,
-            plan: plan
+            title: template.title,
+            intensity: template.intensity,
+            plan: plan,
+            templateID: try template.templateID(in: context)
         )
     }
 
     /// Empieza un entrenamiento con los ejercicios de una plantilla, en su orden y con sus
     /// series previstas. Si un ejercicio se borró del catálogo, se vuelve a crear por nombre.
+    ///
+    /// Cada ejercicio se rellena con lo que se hizo en su posición en la última sesión de
+    /// esta plantilla (`WorkoutTemplate.lastSession`, emparejado con `PlanMatching`), no con
+    /// la última vez que se hizo ese ejercicio en cualquier entrenamiento: el orden cambia
+    /// el rendimiento (el primer ejercicio se hace descansado).
     @discardableResult
     public static func start(
         in context: ModelContext,
@@ -72,17 +89,50 @@ extension Workout {
         if try inProgress(in: context) != nil {
             throw WorkoutSessionError.alreadyInProgress
         }
-        let plan = try template.orderedExercises.map { entry in
-            PlannedExercise(definition: try entry.resolveDefinition(in: context), targetSets: entry.targetSets)
+        let entries = template.orderedExercises
+        let definitions = try entries.map { try $0.resolveDefinition(in: context) }
+        let previous = try template.lastSession(before: date, in: context)
+        let previousEntries = previous?.orderedExercises ?? []
+        let matches = PlanMatching.match(
+            planned: definitions.map { Optional($0.id) },
+            previous: previousEntries.map { $0.definition?.id }
+        )
+        let plan = zip(entries, definitions).enumerated().map { index, pair -> PlannedExercise in
+            let (entry, definition) = pair
+            var prefill: PrefillSource?
+            if let previous, let match = matches[index], !previousEntries[match].sets.isEmpty {
+                prefill = PrefillSource(workout: previous, samples: previousEntries[match].samples)
+            }
+            return PlannedExercise(definition: definition, targetSets: entry.targetSets, prefill: prefill)
         }
-        let workout = try begin(in: context, at: date, title: ExerciseName.clean(template.name), intensity: .moderate, plan: plan)
+        let workout = try begin(
+            in: context,
+            at: date,
+            title: ExerciseName.clean(template.name),
+            intensity: .moderate,
+            plan: plan,
+            templateID: template.id
+        )
         template.lastUsedAt = date
         return workout
+    }
+
+    private struct PrefillSource {
+        let workoutID: UUID
+        let date: Date
+        let samples: [SetSample]
+
+        init(workout: Workout, samples: [SetSample]) {
+            workoutID = workout.id
+            date = workout.startedAt
+            self.samples = samples
+        }
     }
 
     private struct PlannedExercise {
         let definition: ExerciseDefinition
         let targetSets: Int
+        let prefill: PrefillSource?
     }
 
     private static func begin(
@@ -90,13 +140,15 @@ extension Workout {
         at date: Date,
         title: String,
         intensity: WorkoutIntensity,
-        plan: [PlannedExercise]
+        plan: [PlannedExercise],
+        templateID: UUID?
     ) throws -> Workout {
         if try inProgress(in: context) != nil {
             throw WorkoutSessionError.alreadyInProgress
         }
-        // Las series previstas solo valen para el entrenamiento en curso.
+        // Las series previstas y los valores sugeridos solo valen para el entrenamiento en curso.
         try ExerciseSetTarget.deleteAll(in: context)
+        try ExercisePrefill.deleteAll(in: context)
         let workout = Workout(
             startedAt: date,
             title: title,
@@ -104,6 +156,9 @@ extension Workout {
             bodyWeightKg: try lastKnownBodyWeightKg(in: context)
         )
         context.insert(workout)
+        if let templateID {
+            context.insert(WorkoutTemplateUse(workoutID: workout.id, templateID: templateID))
+        }
         for item in plan {
             let exercise = workout.addExercise(item.definition)
             if item.targetSets > 0 {
@@ -111,6 +166,15 @@ extension Workout {
                     workoutExerciseID: exercise.id,
                     workoutID: workout.id,
                     targetSets: item.targetSets
+                ))
+            }
+            if let prefill = item.prefill {
+                context.insert(ExercisePrefill(
+                    workoutExerciseID: exercise.id,
+                    workoutID: workout.id,
+                    sourceWorkoutID: prefill.workoutID,
+                    sourceDate: prefill.date,
+                    samples: prefill.samples
                 ))
             }
         }
@@ -169,11 +233,12 @@ extension Workout {
 }
 
 extension WorkoutExercise {
-    /// Añade una serie rellenada con `SetSuggestion`: la de la misma posición la última vez
-    /// que se hizo el ejercicio o, si no, una copia de la última serie de hoy.
+    /// Añade una serie rellenada con `SetSuggestion`: la de la misma posición en `previous`
+    /// (valores sugeridos de la sesión anterior de la rutina) o, si no, una copia de la
+    /// última serie de hoy.
     @discardableResult
-    public func addSuggestedSet() -> WorkoutSet {
-        let suggestion = SetSuggestion.next(current: samples, previous: previousSamples)
+    public func addSuggestedSet(previous: [SetSample] = []) -> WorkoutSet {
+        let suggestion = SetSuggestion.next(current: samples, previous: previous)
         return addSet(
             weightKg: suggestion.weightKg,
             reps: suggestion.reps,
@@ -243,16 +308,10 @@ extension WorkoutExercise {
 }
 
 extension WorkoutExercise {
-    /// Series de este ejercicio la última vez que se hizo (en otro entrenamiento terminado anterior).
-    public var previousSamples: [SetSample] {
-        guard let workout, let entry = definition?.previousEntry(before: workout) else { return [] }
-        return entry.samples
-    }
-
-    /// Series que faltan para llegar a `target`, rellenadas como las añadiría `addSuggestedSet()`
-    /// una a una (la primera es exactamente la que añadiría ahora).
-    public func plannedSets(target: Int) -> [SetSample] {
-        SetSuggestion.remaining(current: samples, previous: previousSamples, target: target)
+    /// Series que faltan para llegar a `target`, rellenadas como las añadiría
+    /// `addSuggestedSet(previous:)` una a una (la primera es exactamente la que añadiría ahora).
+    public func plannedSets(target: Int, previous: [SetSample]) -> [SetSample] {
+        SetSuggestion.remaining(current: samples, previous: previous, target: target)
     }
 }
 

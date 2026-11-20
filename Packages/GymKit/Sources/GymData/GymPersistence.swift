@@ -51,16 +51,31 @@ public enum GymSchemaV4: VersionedSchema {
     }
 }
 
+/// Versión 5: añade la plantilla de cada entrenamiento (`WorkoutTemplateUse`) y los valores
+/// sugeridos de la sesión anterior (`ExercisePrefill`). Solo modelos nuevos referenciados
+/// por id: migración ligera desde V4.
+///
+/// **No tocar** `CardioActivity`, `CardioSession` ni `VO2MaxReading` sin congelar antes una
+/// copia de V4.
+public enum GymSchemaV5: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(5, 0, 0)
+
+    public static var models: [any PersistentModel.Type] {
+        GymSchemaV4.models + [WorkoutTemplateUse.self, ExercisePrefill.self]
+    }
+}
+
 /// Esquema actual de la app.
-public typealias GymSchemaCurrent = GymSchemaV4
+public typealias GymSchemaCurrent = GymSchemaV5
 
 public enum GymMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self] }
+    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self, GymSchemaV5.self] }
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
             .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
             .lightweight(fromVersion: GymSchemaV3.self, toVersion: GymSchemaV4.self),
+            .lightweight(fromVersion: GymSchemaV4.self, toVersion: GymSchemaV5.self),
         ]
     }
 }

@@ -29,6 +29,9 @@ struct WorkoutExercisesEditor: View {
     @State private var drafts: PendingSetDrafts
     @State private var openChoice: OpenChoice = .automatic
     @Query private var setTargets: [ExerciseSetTarget]
+    @Query private var prefillRecords: [ExercisePrefill]
+    /// Incremento de sobrecarga progresiva sobre los valores de la sesión anterior.
+    @AppStorage("workout.progressionStep") private var progressionRaw = ProgressionStep.none.rawValue
 
     /// Qué ejercicio está desplegado en el entrenamiento en curso.
     private enum OpenChoice: Equatable {
@@ -46,6 +49,7 @@ struct WorkoutExercisesEditor: View {
         _historyDefinition = historyDefinition
         let workoutID = workout.id
         _setTargets = Query(filter: #Predicate<ExerciseSetTarget> { $0.workoutID == workoutID })
+        _prefillRecords = Query(filter: #Predicate<ExercisePrefill> { $0.workoutID == workoutID })
         _drafts = State(initialValue: PendingSetDrafts(keeping: Set(workout.exercises.map(\.id))))
     }
 
@@ -61,6 +65,13 @@ struct WorkoutExercisesEditor: View {
                         .submitLabel(.done)
                 }
 
+                let prefills = livePrefills
+                if let sourceDate = prefills.values.map(\.sourceDate).max() {
+                    Section {
+                        PrefillBanner(sourceDate: sourceDate, progression: progressionBinding)
+                    }
+                }
+
                 let targets = plannedTargets
                 let exercises = workout.orderedExercises
                 let openID = openExerciseID(in: exercises, targets: targets)
@@ -71,6 +82,8 @@ struct WorkoutExercisesEditor: View {
                         drafts: drafts,
                         isLive: isLive,
                         targetSets: targets[exercise.id],
+                        prefill: prefills[exercise.id],
+                        progression: progression,
                         isOpen: !isLive || openID == exercise.id,
                         onToggle: { toggle(exercise.id, openID: openID) },
                         onFinishedExercise: { withAnimation(.snappy) { openChoice = .automatic } },
@@ -90,7 +103,7 @@ struct WorkoutExercisesEditor: View {
                     .plainListRow()
                 } footer: {
                     if workout.exercises.isEmpty {
-                        Text("Añade el primer ejercicio. Las series se rellenan con lo que hiciste la última vez para que solo tengas que corregir.")
+                        Text("Añade el primer ejercicio. Si empiezas desde una plantilla o repites un entreno, las series se rellenan con lo que hiciste en la sesión anterior para que solo tengas que corregir.")
                     } else if isLive {
                         Text("Marca cada serie con ✓ al hacerla: solo se guardan las marcadas. Toca un ejercicio para abrirlo y desliza una serie a la izquierda para borrarla.")
                     } else {
@@ -171,6 +184,20 @@ struct WorkoutExercisesEditor: View {
         }
     }
 
+    /// Valores sugeridos de la sesión anterior por ejercicio; solo con el entreno en curso.
+    private var livePrefills: [UUID: ExercisePrefill] {
+        guard workout.isInProgress else { return [:] }
+        return Dictionary(prefillRecords.map { ($0.workoutExerciseID, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private var progression: ProgressionStep {
+        ProgressionStep(rawValue: progressionRaw) ?? .none
+    }
+
+    private var progressionBinding: Binding<ProgressionStep> {
+        Binding(get: { progression }, set: { progressionRaw = $0.rawValue })
+    }
+
     /// Series previstas por ejercicio; solo mientras el entrenamiento está en curso.
     private var plannedTargets: [UUID: Int] {
         guard workout.isInProgress else { return [:] }
@@ -197,6 +224,9 @@ private struct ExerciseEditorSection: View {
     let isLive: Bool
     /// Series previstas (hechas + pendientes), si las hay.
     let targetSets: Int?
+    /// Lo que se hizo en esta posición la sesión anterior de la rutina, si lo hay.
+    let prefill: ExercisePrefill?
+    let progression: ProgressionStep
     let isOpen: Bool
     let onToggle: () -> Void
     /// Se acaba de marcar la última serie pendiente.
@@ -206,6 +236,7 @@ private struct ExerciseEditorSection: View {
     let onDelete: () -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(RestTimer.self) private var restTimer: RestTimer?
 
     var body: some View {
         let sets = exercise.orderedSets
@@ -246,6 +277,7 @@ private struct ExerciseEditorSection: View {
                     let position = sets.count + index
                     PendingSetRow(
                         label: labels[position],
+                        isSuggestion: drafts.sample(exercise: exercise.id, position: position) == nil,
                         sample: Binding(
                             get: { drafts.sample(exercise: exercise.id, position: position) ?? sample },
                             set: { drafts.set($0, exercise: exercise.id, position: position) }
@@ -270,10 +302,16 @@ private struct ExerciseEditorSection: View {
         }
     }
 
-    /// Series pendientes rellenadas con la última vez (sin los cambios del usuario).
+    /// Valores sugeridos de la sesión anterior con el incremento elegido.
+    private var suggestedPrevious: [SetSample] {
+        guard let prefill else { return [] }
+        return progression.apply(to: prefill.samples)
+    }
+
+    /// Series pendientes rellenadas con la sesión anterior (sin los cambios del usuario).
     private var pendingSamples: [SetSample] {
         guard isLive, let targetSets else { return [] }
-        return exercise.plannedSets(target: targetSets)
+        return exercise.plannedSets(target: targetSets, previous: suggestedPrevious)
     }
 
     private var pendingCount: Int {
@@ -288,6 +326,7 @@ private struct ExerciseEditorSection: View {
             try exercise.completeSet(sample, in: context)
             drafts.remove(exercise: exercise.id, position: position)
         }
+        restTimer?.start()
         if pendingCount == 0 { onFinishedExercise() }
     }
 
@@ -344,8 +383,14 @@ private struct ExerciseEditorSection: View {
         context.saveNow(action)
     }
 
-    /// "Última vez (mar, 11 nov): 80 × 8 · 80 × 6".
+    /// "Sesión anterior de la rutina (mar, 11 nov): 80 × 8 · 80 × 6" si las series salen de
+    /// ahí; si no, "Última vez (…)" del ejercicio en cualquier entrenamiento, solo como dato.
     private var previousSummary: String? {
+        if isLive, let prefill {
+            let base = "Sesión anterior de la rutina (\(WorkoutFormat.day(prefill.sourceDate))): \(WorkoutFormat.sets(prefill.samples))"
+            guard let step = progression.shortLabel else { return base }
+            return base + ". Sugerido con \(step)."
+        }
         guard let previous = exercise.definition?.previousEntry(before: workout),
               let date = previous.performedAt else { return nil }
         return "Última vez (\(WorkoutFormat.day(date))): \(WorkoutFormat.sets(previous.samples))"
@@ -620,10 +665,12 @@ private struct SetEditorRow: View {
     }
 }
 
-/// Serie pendiente: rellenada con la última vez, editable, y no se guarda hasta marcar ✓.
-/// Solo se puede marcar la siguiente, y con repeticiones.
+/// Serie pendiente: rellenada con la sesión anterior, editable, y no se guarda hasta marcar ✓.
+/// Solo se puede marcar la siguiente, y con repeticiones. Mientras el valor es una
+/// sugerencia (no se ha tocado) se ve en gris.
 private struct PendingSetRow: View {
     let label: String
+    let isSuggestion: Bool
     @Binding var sample: SetSample
     let isNext: Bool
     let onComplete: () -> Void
@@ -632,18 +679,18 @@ private struct PendingSetRow: View {
         HStack(spacing: SetRowMetrics.spacing) {
             SetOptionsMenu(label: label, effort: $sample.effort, side: $sample.side)
                 .opacity(isNext ? 1 : 0.5)
-            SetFieldCell(isDimmed: !isNext) {
+            SetFieldCell(isDimmed: !isNext || isSuggestion) {
                 NumberField("kg", value: $sample.weightKg, range: 0...1000)
             }
             Text(SetRowMetrics.separator)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
-            SetFieldCell(side: sample.side, isDimmed: !isNext) {
+            SetFieldCell(side: sample.side, isDimmed: !isNext || isSuggestion) {
                 NumberField("reps", value: repsBinding, allowsDecimals: false, range: 0...999)
             }
             SetCheckButton(state: canComplete ? .ready : .waiting, label: label, action: onComplete)
-                .accessibilityValue(WorkoutFormat.set(sample))
+                .accessibilityValue(isSuggestion ? "\(WorkoutFormat.set(sample)), sugerido" : WorkoutFormat.set(sample))
                 .accessibilityHint(isNext && sample.reps == 0 ? "Escribe las repeticiones para marcarla" : "")
         }
         .buttonStyle(.borderless)
@@ -659,5 +706,43 @@ private struct PendingSetRow: View {
             get: { Double(sample.reps) },
             set: { sample.reps = Int($0) }
         )
+    }
+}
+
+/// Aviso de que las series pendientes salen de la sesión anterior de la rutina, con el
+/// selector de sobrecarga progresiva (se recuerda para los siguientes entrenos).
+private struct PrefillBanner: View {
+    let sourceDate: Date
+    @Binding var progression: ProgressionStep
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            IconBadge(systemImage: "arrow.triangle.2.circlepath", tint: .accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Valores de tu sesión anterior")
+                    .font(.subheadline.weight(.semibold))
+                Text("Del \(WorkoutFormat.day(sourceDate)). En gris hasta que los cambies.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Picker("Progresión", selection: $progression) {
+                    ForEach(ProgressionStep.allCases) { step in
+                        Text(step.displayName).tag(step)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Text(progression.shortLabel ?? "Igual")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor.opacity(0.14), in: Capsule())
+            }
+            .accessibilityLabel("Sobrecarga progresiva")
+            .accessibilityValue(progression.displayName)
+        }
+        .buttonStyle(.borderless)
     }
 }

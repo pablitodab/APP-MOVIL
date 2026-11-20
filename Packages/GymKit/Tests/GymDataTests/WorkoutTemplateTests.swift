@@ -106,20 +106,123 @@ final class WorkoutTemplateTests: XCTestCase {
         XCTAssertEqual(targets[lunge.id], 2)
 
         // Peso y repeticiones de la última sesión (la más reciente), y la 4.ª repite la anterior.
-        XCTAssertEqual(squat.plannedSets(target: 4), [
+        // Esas sesiones no tienen vínculo con la plantilla (historial antiguo) pero se llaman
+        // como ella, así que cuentan como sesiones suyas.
+        let squatPrefill = try XCTUnwrap(try squat.prefill(in: context))
+        XCTAssertEqual(squatPrefill.sourceDate, base.addingTimeInterval(-2 * day))
+        XCTAssertEqual(squat.plannedSets(target: 4, previous: squatPrefill.samples), [
             SetSample(weightKg: 60, reps: 10, effort: .warmup),
             SetSample(weightKg: 110, reps: 6),
             SetSample(weightKg: 110, reps: 5, effort: .failure),
             SetSample(weightKg: 110, reps: 5),
         ])
-        // Ejercicio nunca hecho: series vacías para rellenar.
-        XCTAssertEqual(lunge.plannedSets(target: 2), [SetSample(weightKg: 0, reps: 0), SetSample(weightKg: 0, reps: 0)])
+        // Ejercicio que no estaba en la sesión anterior: series vacías para rellenar.
+        XCTAssertNil(try lunge.prefill(in: context))
+        XCTAssertEqual(lunge.plannedSets(target: 2, previous: []), [SetSample(weightKg: 0, reps: 0), SetSample(weightKg: 0, reps: 0)])
 
         // Marcar una serie añade exactamente la primera prevista y quedan las demás.
-        let first = squat.addSuggestedSet()
+        let first = squat.addSuggestedSet(previous: squatPrefill.samples)
         XCTAssertEqual(first.sample, SetSample(weightKg: 60, reps: 10, effort: .warmup))
-        XCTAssertEqual(squat.plannedSets(target: 4).count, 3)
-        XCTAssertEqual(squat.plannedSets(target: 4).first, SetSample(weightKg: 110, reps: 6))
+        XCTAssertEqual(squat.plannedSets(target: 4, previous: squatPrefill.samples).count, 3)
+        XCTAssertEqual(squat.plannedSets(target: 4, previous: squatPrefill.samples).first, SetSample(weightKg: 110, reps: 6))
+    }
+
+    /// Hace una sesión de la plantilla marcando las series indicadas por ejercicio y la termina.
+    @discardableResult
+    private func session(of template: WorkoutTemplate, daysAgo: Double, sets: [[(Double, Int)]]) throws -> Workout {
+        let start = base.addingTimeInterval(-daysAgo * day)
+        let workout = try Workout.start(in: context, at: start, from: template)
+        for (entry, entrySets) in zip(workout.orderedExercises, sets) {
+            for (weight, reps) in entrySets {
+                try entry.completeSet(SetSample(weightKg: weight, reps: reps), in: context)
+            }
+        }
+        try workout.finish(at: start.addingTimeInterval(3600))
+        try context.save()
+        return workout
+    }
+
+    func testPrefillComesFromLastSessionOfSameTemplateNotFromAnyWorkout() throws {
+        let torso = try template("Torso", [("Press banca", 2), ("Remo", 1)])
+        let earlier = try session(of: torso, daysAgo: 4, sets: [[(80, 8), (80, 7)], [(60, 10)]])
+        XCTAssertEqual(try earlier.templateID(in: context), torso.id)
+
+        // Más reciente, pero de otra rutina y con otro orden: no debe usarse.
+        let other = Workout(startedAt: base.addingTimeInterval(-1 * day), title: "Empuje")
+        context.insert(other)
+        other.addExercise(try definition("Press banca")).addSet(weightKg: 100, reps: 3)
+        try other.finish(at: other.startedAt.addingTimeInterval(1800))
+        try context.save()
+
+        let workout = try Workout.start(in: context, at: base, from: torso)
+        try context.save()
+        let prefills = try workout.prefills(in: context)
+        let bench = workout.orderedExercises[0]
+        let row = workout.orderedExercises[1]
+        XCTAssertEqual(prefills[bench.id]?.samples, [SetSample(weightKg: 80, reps: 8), SetSample(weightKg: 80, reps: 7)])
+        XCTAssertEqual(prefills[bench.id]?.sourceWorkoutID, earlier.id)
+        XCTAssertEqual(prefills[row.id]?.samples, [SetSample(weightKg: 60, reps: 10)])
+        XCTAssertEqual(try workout.templateID(in: context), torso.id)
+    }
+
+    func testSameExerciseInTwoTemplatesKeepsEachPosition() throws {
+        let heavy = try template("Pecho", [("Press banca", 1), ("Remo", 1)])
+        let light = try template("Espalda", [("Remo", 1), ("Press banca", 1)])
+        try session(of: heavy, daysAgo: 6, sets: [[(90, 5)], [(60, 10)]])
+        try session(of: light, daysAgo: 3, sets: [[(70, 8)], [(70, 10)]])
+
+        let workout = try Workout.start(in: context, at: base, from: heavy)
+        let prefills = try workout.prefills(in: context)
+        XCTAssertEqual(workout.orderedExercises.map { prefills[$0.id]?.samples.first?.weightKg }, [90, 60],
+                       "Press banca de primero, con lo de «Pecho», aunque «Espalda» sea más reciente")
+    }
+
+    func testPrefillFollowsExerciseWhenTemplateChanges() throws {
+        let torso = try template("Torso", [("Press banca", 1), ("Remo", 1)])
+        try session(of: torso, daysAgo: 3, sets: [[(80, 8)], [(60, 10)]])
+        torso.addExercise(try definition("Fondos"), targetSets: 1)
+        torso.moveExercises(fromOffsets: [2], toOffset: 0)
+        try context.save()
+
+        let workout = try Workout.start(in: context, at: base, from: torso)
+        let prefills = try workout.prefills(in: context)
+        XCTAssertEqual(workout.orderedExercises.map(\.name), ["Fondos", "Press banca", "Remo"])
+        XCTAssertEqual(workout.orderedExercises.map { prefills[$0.id]?.samples.first?.weightKg }, [nil, 80, 60])
+    }
+
+    func testLegacyNameMatchIgnoresWorkoutsOfOtherTemplates() throws {
+        let legs = try template("Pierna", [("Sentadilla", 1)])
+        let renamed = try template("Pierna B", [("Sentadilla", 1)])
+        // Sesión de «Pierna B» que luego se renombró a mano como «Pierna».
+        let other = try session(of: renamed, daysAgo: 1, sets: [[(140, 3)]])
+        other.title = "Pierna"
+        try finishedWorkout(daysAgo: 5, exercise: "Sentadilla", sets: [(100, 5, .normal, .bilateral)])
+
+        XCTAssertEqual(try legs.lastSession(before: base, in: context)?.startedAt, base.addingTimeInterval(-5 * day))
+        XCTAssertTrue(try renamed.lastSession(before: base, in: context) === other)
+    }
+
+    func testLastSessionSkipsSessionsWithoutSets() throws {
+        let torso = try template("Torso", [("Press banca", 1)])
+        try session(of: torso, daysAgo: 5, sets: [[(80, 8)]])
+        try session(of: torso, daysAgo: 1, sets: [[]])
+        XCTAssertEqual(try torso.lastSession(before: base, in: context)?.startedAt, base.addingTimeInterval(-5 * day))
+    }
+
+    func testNewWorkoutClearsPrefillsOfPreviousOne() throws {
+        let torso = try template("Torso", [("Press banca", 1)])
+        try session(of: torso, daysAgo: 2, sets: [[(80, 8)]])
+        let first = try Workout.start(in: context, at: base, from: torso)
+        XCTAssertEqual(try first.prefills(in: context).count, 1)
+        first.addExercise(try definition("Curl"))
+        XCTAssertEqual(try first.prefills(in: context).count, 1, "Un ejercicio añadido a mano no tiene sugerencia")
+        try first.finish(at: base.addingTimeInterval(1800))
+        try context.save()
+
+        try Workout.start(in: context, at: base.addingTimeInterval(day))
+        try context.save()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ExercisePrefill>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<WorkoutTemplateUse>()), 2, "El vínculo con la plantilla se conserva")
     }
 
     func testStartFromTemplateFailsWhileAnotherIsInProgress() throws {

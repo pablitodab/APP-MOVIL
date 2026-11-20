@@ -4,9 +4,9 @@ import GymCore
 
 /// Plantilla (rutina): ejercicios en orden con el número de series previsto.
 ///
-/// No guarda pesos ni repeticiones: al empezar un entrenamiento con ella, cada serie se
-/// rellena con lo que se hizo la última vez en ese ejercicio (`SetSuggestion`), así la
-/// plantilla no se queda desfasada cuando se progresa.
+/// No guarda pesos ni repeticiones: al empezar un entrenamiento con ella, cada ejercicio se
+/// rellena con lo que se hizo en su posición en la última sesión de esta plantilla
+/// (`ExercisePrefill`), así la plantilla no se queda desfasada cuando se progresa.
 @Model
 public final class WorkoutTemplate {
     @Attribute(.unique) public var id: UUID
