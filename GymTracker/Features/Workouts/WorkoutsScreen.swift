@@ -10,6 +10,7 @@ enum WorkoutRoute: Hashable {
     case comparison(baseline: Workout?, current: Workout)
     case templates
     case template(WorkoutTemplate)
+    case plan
 }
 
 /// Pestaña "Entrenamientos": empezar/continuar un entrenamiento, plantillas, historial de
@@ -56,6 +57,13 @@ struct WorkoutsScreen: View {
                 }
 
                 if searchText.isEmpty {
+                    PlanSection(
+                        finished: finished,
+                        canStart: inProgress.isEmpty,
+                        onStart: { start(from: $0) },
+                        onEdit: { path.append(WorkoutRoute.plan) }
+                    )
+
                     TemplatesSection(
                         canStart: inProgress.isEmpty,
                         onStart: { start(from: $0) },
@@ -115,6 +123,7 @@ struct WorkoutsScreen: View {
                 if ScreenshotMode.opensActiveWorkout, presented == nil { presented = inProgress.first }
                 if ScreenshotMode.showsExercises { segment = .exercises }
                 if ScreenshotMode.opensNewExercise { creatingExercise = true }
+                if ScreenshotMode.opensPlan, path.isEmpty { path.append(WorkoutRoute.plan) }
             }
             #endif
         }
@@ -161,6 +170,8 @@ struct WorkoutsScreen: View {
                 canStart: inProgress.isEmpty,
                 onStart: { start(from: $0) }
             )
+        case .plan:
+            PlanEditorView()
         }
     }
 

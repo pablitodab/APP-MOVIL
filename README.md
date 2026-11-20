@@ -186,7 +186,7 @@ Reglas:
 - **Capturas en simulador:** `scripts/smoke-ios.sh` abre la app en Debug con `-screenshots` (datos de `PreviewData` en memoria, ver `ScreenshotMode.swift`) y guarda capturas en claro y oscuro en `build/smoke/`.
 - **Errores visibles:** los errores llevan `errorDescription` en español para mostrarlos tal cual. Si la base de datos no abre, la app muestra una pantalla de error en lugar de cerrarse.
 
-### Modelo de datos (SwiftData, `GymSchemaV4`, en `GymData`)
+### Modelo de datos (SwiftData, `GymSchemaV6`, en `GymData`)
 
 | Modelo | Campos | Relaciones |
 |---|---|---|
@@ -201,6 +201,9 @@ Reglas:
 | `CardioActivity` (V4) | `name`, `normalizedName`, `equipmentRaw`, `musclesRaw`, `createdAt` | `sessions` (nullify) |
 | `CardioSession` (V4) | `performedAt`, `durationSeconds`, `distanceKm?`, `gaitRaw`, `inclinePercent?`, `speedKmh?`, `level?`, `rpe?`, `averageHeartRate?`, `maxHeartRate?`, `notes` | `activity` |
 | `VO2MaxReading` (V4) | `measuredAt`, `value` (ml/kg/min), `sourceRaw` (manual/salud) | — |
+| `WorkoutTemplateUse` (V5) | `workoutID` (único), `templateID` | — (ids) |
+| `ExercisePrefill` (V5) | `workoutExerciseID` (único), `workoutID`, `sourceWorkoutID`, `sourceDate`, `samplesData` | — (ids) |
+| `TrainingPlan` (V6) | `configData` (JSON de `TrainingPlanConfig`), `updatedAt` | — (ids de plantillas) |
 
 - `ExerciseDefinition` es el catálogo: da identidad a "Press banca" en todos los entrenamientos y es lo que permite el historial por ejercicio. Crea o reutiliza con `ExerciseDefinition.findOrCreate(named:in:)` (ignora mayúsculas, tildes y espacios); `create(named:muscles:in:)` crea uno nuevo con músculos y falla si el nombre ya existe.
 - `ExerciseMuscles` (esquema V3) guarda los músculos (`MuscleGroup`) de cada ejercicio por `ExerciseDefinition.id`, en un modelo aparte para no tocar los modelos de V1. Los ejercicios anteriores quedan sin músculos hasta que se editan.
@@ -208,7 +211,7 @@ Reglas:
 - Borrar con deslizamiento: `deleteSets(atOffsets:in:)` / `deleteExercises(atOffsets:in:)` borran del almacén y renumeran.
 - `Workout.finish(at:)` valida la hora de fin y calcula las calorías activas. Rechaza sesiones de más de 5 h (entrenamiento olvidado abierto) para no enviar cifras absurdas a Salud.
 - Las series de calentamiento no cuentan para el volumen (`SetEffort.countsTowardVolume`).
-- **Migraciones:** V1 (los cuatro primeros modelos) ya está instalado con datos reales. V2 solo **añade** modelos, así que la etapa V1→V2 es ligera; `MigrationTests` crea un almacén V1 en disco, lo abre con el esquema actual y comprueba que no se pierde nada. V1 y V2 comparten las clases: **no cambies** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition` sin antes congelar una copia de V1 dentro de `GymSchemaV1` (ver comentario en `GymPersistence.swift`). Por eso los modelos nuevos apuntan a los antiguos por id y no con relaciones (una relación necesitaría su inversa en el modelo antiguo). V3 (músculos) y V4 (cardio y VO2max) también solo añaden modelos, con etapas ligeras V2→V3 y V3→V4; `MigrationTests` abre almacenes V1, V2 y V3 con el esquema actual.
+- **Migraciones:** V1 (los cuatro primeros modelos) ya está instalado con datos reales. V2 solo **añade** modelos, así que la etapa V1→V2 es ligera; `MigrationTests` crea un almacén V1 en disco, lo abre con el esquema actual y comprueba que no se pierde nada. V1 y V2 comparten las clases: **no cambies** `Workout`, `WorkoutExercise`, `WorkoutSet` ni `ExerciseDefinition` sin antes congelar una copia de V1 dentro de `GymSchemaV1` (ver comentario en `GymPersistence.swift`). Por eso los modelos nuevos apuntan a los antiguos por id y no con relaciones (una relación necesitaría su inversa en el modelo antiguo). V3 (músculos), V4 (cardio y VO2max), V5 (plantilla de cada entreno y valores sugeridos) y V6 (plan) también solo añaden modelos, con etapas ligeras; `MigrationTests` abre almacenes V1 a V5 con el esquema actual.
 
 ### Pestaña Progreso (calendario, racha y estadísticas)
 
@@ -268,6 +271,8 @@ Código en `GymTracker/Features/Workouts/` (`Logging/` registro en vivo, `Histor
 - **Comparar entrenamientos**: elige A y B; por defecto A es el anterior con más ejercicios en común. Diferencias de duración, calorías, volumen, series y repeticiones, y por ejercicio.
 
 Definiciones (en `GymCore/Analysis`, con tests): *serie efectiva* = no es calentamiento y tiene repeticiones; *volumen* = kg × reps de las efectivas; *mejor serie* = la efectiva más pesada (a igual peso, más reps); *1RM estimado* = Epley, solo con 1–12 reps.
+
+- **Plan** (`Plan/`): qué plantilla toca cada día, en dos modos a elegir en *Editar plan*. **Semana**: cada día de lunes a domingo tiene sus plantillas (una plantilla puede ir en varios días; también se eligen con los botones L M X J V S D del editor de la plantilla); los días sin plantilla son de descanso. **Ciclo**: una secuencia de plantillas y descansos (p. ej. P/T, E/B, Pierna, Descanso) que se repite sin mirar la semana. El ciclo **sigue el calendario**: cada día avanza un paso, se entrene o no, así que un entreno no hecho se pierde y no se desplaza (decisión del usuario, 20-nov). *Hoy toca* elige en qué paso estás; reordenar o quitar pasos no cambia lo de hoy. La tarjeta de Entrenamientos muestra lo de hoy con *Empezar* (o *Hecho hoy* si ya terminaste un entreno de esa plantilla) y los próximos 6 días. Lógica pura en `GymCore/Planning/TrainingSchedule.swift`; se guarda como JSON en `TrainingPlan` (V6). Borrar una plantilla la quita del plan.
 
 ## Pestaña Cardio
 

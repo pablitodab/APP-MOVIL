@@ -13,6 +13,8 @@ import Foundation
 /// - `-newExercise`: abre el formulario de ejercicio nuevo.
 /// - `-newCardio`: abre el formulario para registrar una sesión de cardio.
 /// - `-muscleSets`: Progreso desplazado hasta «Series por músculo».
+/// - `-openPlan`: abre el editor del plan.
+/// - `-weeklyPlan`: plan por días de la semana en vez de ciclo.
 ///
 /// Salud usa también datos de ejemplo en memoria, así no aparece la petición de permisos.
 enum ScreenshotMode {
@@ -36,6 +38,10 @@ enum ScreenshotMode {
     static var opensCardioForm: Bool { isEnabled && arguments.contains("-newCardio") }
 
     static var scrollsToMuscleSets: Bool { isEnabled && arguments.contains("-muscleSets") }
+
+    static var opensPlan: Bool { isEnabled && arguments.contains("-openPlan") }
+
+    static var usesWeeklyPlan: Bool { isEnabled && arguments.contains("-weeklyPlan") }
 
     static var includesWorkoutInProgress: Bool { !arguments.contains("-noActiveWorkout") }
 }
