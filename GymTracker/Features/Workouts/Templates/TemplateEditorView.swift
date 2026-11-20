@@ -31,6 +31,10 @@ struct TemplateEditorView: View {
                     .submitLabel(.done)
             }
 
+            if !isReordering {
+                TemplatePlanDaysSection(template: template)
+            }
+
             Section {
                 ForEach(template.orderedExercises) { entry in
                     TemplateExerciseRow(entry: entry, definition: definitionsByID[entry.definitionID])
@@ -118,6 +122,7 @@ struct TemplateEditorView: View {
         // El borrado se hace al desaparecer para no pintar un modelo ya borrado.
         .onDisappear {
             if deleteOnDisappear {
+                template.removeFromPlan(in: context)
                 context.delete(template)
             }
             context.saveNow()

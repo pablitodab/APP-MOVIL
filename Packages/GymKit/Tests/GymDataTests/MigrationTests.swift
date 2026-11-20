@@ -40,6 +40,21 @@ private enum InstalledV4Plan: SchemaMigrationPlan {
     }
 }
 
+/// Plan de la versión con valores sugeridos por plantilla (V1–V5), la instalada antes del plan.
+private enum InstalledV5Plan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self, GymSchemaV5.self]
+    }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
+            .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
+            .lightweight(fromVersion: GymSchemaV3.self, toVersion: GymSchemaV4.self),
+            .lightweight(fromVersion: GymSchemaV4.self, toVersion: GymSchemaV5.self),
+        ]
+    }
+}
+
 /// Comprueba que una base de datos creada por la versión anterior (V1) se abre con el
 /// esquema actual sin perder nada. Usa un archivo real, no memoria, porque la migración
 /// solo ocurre con un almacén en disco.
@@ -230,5 +245,52 @@ final class MigrationTests: XCTestCase {
             SetSample(weightKg: 80, reps: 8),
             SetSample(weightKg: 77.5, reps: 8),
         ])
+    }
+
+    func testStoreFromV5OpensWithCurrentSchemaAndKeepsTemplateLinks() throws {
+        let url = directory.appendingPathComponent("GymTracker.store")
+        let calendar = GymCalendar.make()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let templateID: UUID
+        let workoutID: UUID
+
+        do {
+            let schema = Schema(versionedSchema: GymSchemaV5.self)
+            let configuration = ModelConfiguration("GymTracker", schema: schema, url: url, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, migrationPlan: InstalledV5Plan.self, configurations: [configuration])
+            let context = ModelContext(container)
+            let template = WorkoutTemplate(name: "Pierna")
+            context.insert(template)
+            template.addExercise(try ExerciseDefinition.findOrCreate(named: "Sentadilla", in: context), targetSets: 1)
+            let workout = try Workout.start(in: context, at: start, from: template)
+            workout.orderedExercises.first?.addSet(weightKg: 100, reps: 5)
+            try workout.finish(at: start.addingTimeInterval(3600))
+            try context.save()
+            templateID = template.id
+            workoutID = workout.id
+        }
+
+        let container = try GymPersistence.makeContainer(storeURL: url)
+        let context = ModelContext(container)
+        let workout = try XCTUnwrap(try context.fetch(FetchDescriptor<Workout>()).first)
+        XCTAssertEqual(workout.id, workoutID)
+        XCTAssertEqual(workout.orderedExercises.first?.samples, [SetSample(weightKg: 100, reps: 5)])
+        XCTAssertEqual(try workout.templateID(in: context), templateID)
+
+        // V6: no hay plan hasta que se crea; se guarda y se vuelve a leer.
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TrainingPlan>()), 0)
+        try TrainingPlan.update(in: context, now: start) { config in
+            config.mode = .weekly
+            config.weekly.toggle(templateID, on: Weekday(of: start, calendar: calendar))
+        }
+        try context.save()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TrainingPlan>()), 1)
+        let plan = try TrainingPlan.current(in: context).config
+        XCTAssertEqual(TrainingSchedule.day(start, plan: plan, calendar: calendar)?.templateIDs, [templateID])
+
+        // El entreno que ya estaba hecho cuenta como hecho ese día.
+        let day = try XCTUnwrap(calendar.dateInterval(of: .day, for: start))
+        let done = try Workout.completedTemplatesByDay(in: day, calendar: calendar, context: context)
+        XCTAssertEqual(done[day.start], [templateID])
     }
 }

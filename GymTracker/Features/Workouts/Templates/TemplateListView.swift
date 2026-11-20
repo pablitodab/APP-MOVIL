@@ -68,6 +68,7 @@ struct TemplateListView: View {
             presenting: pendingDeletion
         ) { template in
             Button("Eliminar", role: .destructive) {
+                template.removeFromPlan(in: context)
                 context.delete(template)
                 context.saveNow()
             }

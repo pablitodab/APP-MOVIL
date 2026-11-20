@@ -80,6 +80,24 @@ enum PreviewData {
             torso.addExercise(row, targetSets: 2)
             torso.lastUsedAt = calendar.date(byAdding: .day, value: -1, to: .now)
 
+            // Plan: ciclo Torso, Pierna, Descanso que empieza hoy con Torso; y por días de la
+            // semana (lunes y jueves Torso, martes y viernes Pierna) para la otra captura.
+            try TrainingPlan.update(in: context) { plan in
+                #if DEBUG
+                plan.mode = ScreenshotMode.usesWeeklyPlan ? .weekly : .cycle
+                #else
+                plan.mode = .cycle
+                #endif
+                for id in [torso.id, legs.id, nil] {
+                    plan.cycle.append(templateID: id, today: .now, calendar: calendar)
+                }
+                plan.cycle.setToday(0, today: .now, calendar: calendar)
+                plan.weekly.toggle(torso.id, on: .monday)
+                plan.weekly.toggle(torso.id, on: .thursday)
+                plan.weekly.toggle(legs.id, on: .tuesday)
+                plan.weekly.toggle(legs.id, on: .friday)
+            }
+
             try addCardio(in: context, calendar: calendar)
 
             guard includesWorkoutInProgress else {

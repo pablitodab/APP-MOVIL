@@ -65,17 +65,30 @@ public enum GymSchemaV5: VersionedSchema {
     }
 }
 
+/// Versión 6: añade el plan de entrenamiento (`TrainingPlan`: plantillas por días de la
+/// semana o en ciclo). Un modelo nuevo sin relaciones: migración ligera desde V5.
+///
+/// **No tocar** `WorkoutTemplateUse` ni `ExercisePrefill` sin congelar antes una copia de V5.
+public enum GymSchemaV6: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(6, 0, 0)
+
+    public static var models: [any PersistentModel.Type] {
+        GymSchemaV5.models + [TrainingPlan.self]
+    }
+}
+
 /// Esquema actual de la app.
-public typealias GymSchemaCurrent = GymSchemaV5
+public typealias GymSchemaCurrent = GymSchemaV6
 
 public enum GymMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self, GymSchemaV5.self] }
+    public static var schemas: [any VersionedSchema.Type] { [GymSchemaV1.self, GymSchemaV2.self, GymSchemaV3.self, GymSchemaV4.self, GymSchemaV5.self, GymSchemaV6.self] }
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: GymSchemaV1.self, toVersion: GymSchemaV2.self),
             .lightweight(fromVersion: GymSchemaV2.self, toVersion: GymSchemaV3.self),
             .lightweight(fromVersion: GymSchemaV3.self, toVersion: GymSchemaV4.self),
             .lightweight(fromVersion: GymSchemaV4.self, toVersion: GymSchemaV5.self),
+            .lightweight(fromVersion: GymSchemaV5.self, toVersion: GymSchemaV6.self),
         ]
     }
 }
