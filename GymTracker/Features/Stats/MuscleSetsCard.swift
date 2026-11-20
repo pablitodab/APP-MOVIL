@@ -33,7 +33,7 @@ struct MuscleSetsCard: View {
                 }
             }
 
-            Text("Sin calentamientos. Cada serie cuenta para todos los músculos de su ejercicio.")
+            Text("Sin calentamientos. Izquierda y derecha cuentan como una serie. Cada serie cuenta para todos los músculos de su ejercicio.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

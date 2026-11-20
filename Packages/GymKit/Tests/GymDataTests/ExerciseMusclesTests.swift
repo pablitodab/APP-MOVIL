@@ -83,7 +83,8 @@ final class ExerciseMusclesTests: XCTestCase {
         benchEntry.addSet(weightKg: 80, reps: 8)
         benchEntry.addSet(weightKg: 80, reps: 6, effort: .failure)
         let curlEntry = workout.addExercise(curl)
-        curlEntry.addSet(weightKg: 12, reps: 12)
+        curlEntry.addSet(weightKg: 12, reps: 12, side: .left)
+        curlEntry.addSet(weightKg: 12, reps: 12, side: .right)
         try context.save()
 
         let map = ExerciseMuscles.byDefinition(try context.fetch(FetchDescriptor<ExerciseMuscles>()))

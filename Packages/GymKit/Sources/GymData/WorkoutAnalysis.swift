@@ -88,7 +88,7 @@ extension Workout {
                 exerciseKey: exercise.definition?.id.uuidString ?? "sin-definicion-\(exercise.id.uuidString)",
                 exerciseName: exercise.name,
                 muscles: exercise.definition.flatMap { musclesByDefinition[$0.id] } ?? [],
-                workingSets: exercise.stats.workingSets
+                workingSets: MuscleSetStats.pairedSetCount(exercise.samples)
             )
         }
     }
