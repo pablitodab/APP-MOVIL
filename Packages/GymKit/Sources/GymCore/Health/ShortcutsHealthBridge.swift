@@ -94,6 +94,13 @@ public struct HealthBridgeState: Codable, Equatable, Sendable {
 
 public enum HealthBridgeError: Error, Equatable, LocalizedError, Sendable {
     case mismatchedCounts(values: Int, dates: Int)
+    /// Muestras sin agrupar: valores, fechas de inicio, de fin y orígenes deben ir a la par.
+    case mismatchedSampleLists(values: Int, starts: Int, ends: Int, sources: Int)
+    /// El peso no es un total diario: no se combina por orígenes.
+    case samplesNotSupported
+    /// Con «Orígenes» todas las muestras llegan a medianoche: la búsqueda está agrupada
+    /// por día o las fechas llegan sin hora, y no se pueden quitar los solapes.
+    case samplesWithoutTime
     case invalidValue(Double)
     case storageFailed(String)
     /// «Marcar entrenamiento como registrado en Salud» llegó sin el resultado de
@@ -106,6 +113,12 @@ public enum HealthBridgeError: Error, Equatable, LocalizedError, Sendable {
             return "No se ha marcado como registrado en Salud: falta «Entrenamiento registrado». Pon «Marcar entrenamiento como registrado en Salud» justo después de «Registrar entrenamiento» y, en su campo «Entrenamiento registrado» elige el resultado de «Registrar entrenamiento». Pasos en la guía de Atajos."
         case .mismatchedCounts(let values, let dates):
             return "El atajo envió \(values) valores y \(dates) fechas; deben ser el mismo número. Revisa que «Valores» y «Fechas» salgan de la misma búsqueda de Salud, o deja «Fechas» vacío."
+        case .mismatchedSampleLists(let values, let starts, let ends, let sources):
+            return "El atajo envió \(values) valores, \(starts) fechas de inicio, \(ends) fechas de fin y \(sources) orígenes; deben ser el mismo número. Los cuatro tienen que salir de la misma búsqueda de Salud, sin agrupar: propiedades Valor, Fecha de inicio, Fecha de finalización y Origen."
+        case .samplesWithoutTime:
+            return "Para no contar dos veces los pasos del iPhone y del reloj, la búsqueda de Salud tiene que ir sin agrupar (Agrupar por: Ninguno, sin «Completar las que faltan») y las fechas con hora. No se ha guardado nada."
+        case .samplesNotSupported:
+            return "El peso no usa «Fechas de fin» ni «Orígenes»: déjalos vacíos en ese bloque."
         case .invalidValue(let value):
             return "El atajo envió un valor no válido (\(value))."
         case .storageFailed(let message):
@@ -179,6 +192,54 @@ public actor HealthBridgeStore {
             }
             state.days = byDay.values.sorted { $0.day < $1.day }
             updated = totals.count
+        }
+        state.lastImportAt = now
+        try persist()
+        return updated
+    }
+
+    /// Guarda muestras de Salud sin agrupar, con su origen, quitando lo que dos orígenes
+    /// cuentan a la vez (iPhone y Apple Watch) igual que hace Salud
+    /// (ver `HealthSampleMerger`).
+    ///
+    /// Se sustituyen todos los días entre la primera y la última muestra; un día de ese
+    /// tramo sin muestras queda a 0. El primer día puede venir incompleto (la búsqueda de
+    /// «los últimos N días» puede empezar a media jornada), así que solo se escribe si aún
+    /// no había dato para ese día.
+    ///
+    /// - Returns: número de días actualizados.
+    @discardableResult
+    public func importSamples(_ metric: HealthBridgeMetric, samples: [HealthSourceSample], now: Date = .now) throws -> Int {
+        guard metric != .bodyMassKg else { throw HealthBridgeError.samplesNotSupported }
+        if let invalid = samples.first(where: { !$0.value.isFinite || $0.value < 0 }) {
+            throw HealthBridgeError.invalidValue(invalid.value)
+        }
+        let isMidnight = { (date: Date) in self.calendar.startOfDay(for: date) == date }
+        if samples.count > 1, samples.allSatisfy({ isMidnight($0.start) && isMidnight($0.end) }) {
+            throw HealthBridgeError.samplesWithoutTime
+        }
+
+        var updated = 0
+        let bounds = samples.flatMap { [$0.start, $0.end] }
+        if let first = bounds.min(), let last = bounds.max() {
+            let totals = HealthSampleMerger.dailyTotals(samples, calendar: calendar)
+            let firstDay = calendar.startOfDay(for: first)
+            let lastDay = calendar.startOfDay(for: last)
+            var byDay = Dictionary(uniqueKeysWithValues: state.days.map { ($0.day, $0) })
+            var day = firstDay
+            while day <= lastDay {
+                let existing = byDay[day]
+                let possiblyPartial = day == firstDay && firstDay != lastDay
+                if !possiblyPartial || (existing?.value(of: metric) ?? 0) == 0 {
+                    var summary = existing ?? .empty(day: day)
+                    summary.set(metric, to: totals[day] ?? 0)
+                    byDay[day] = summary
+                    updated += 1
+                }
+                guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+                day = next
+            }
+            state.days = byDay.values.sorted { $0.day < $1.day }
         }
         state.lastImportAt = now
         try persist()
@@ -261,6 +322,17 @@ extension HealthDaySummary {
         case .basalKcal: basalEnergyKcal = value
         case .exerciseMinutes: exerciseMinutes = value
         case .bodyMassKg: break
+        }
+    }
+
+    func value(of metric: HealthBridgeMetric) -> Double {
+        switch metric {
+        case .steps: return steps
+        case .distanceKm: return walkingRunningDistanceMeters / 1000
+        case .activeKcal: return activeEnergyKcal
+        case .basalKcal: return basalEnergyKcal
+        case .exerciseMinutes: return exerciseMinutes
+        case .bodyMassKg: return 0
         }
     }
 }

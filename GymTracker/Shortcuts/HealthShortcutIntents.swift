@@ -230,7 +230,7 @@ enum HealthDataOption: String, AppEnum {
 struct SaveHealthDataIntent: AppIntent {
     static let title: LocalizedStringResource = "Guardar datos de Salud en GymTracker"
     static let description = IntentDescription(
-        "Guarda en GymTracker una búsqueda de Salud agrupada por día. En «Valores» pon la propiedad Valor de las muestras. «Fechas» es opcional: vacío, se entiende un valor por día terminando hoy (Completar las que faltan y Más antiguo primero).",
+        "Guarda en GymTracker una búsqueda de Salud. Recomendado: la búsqueda sin agrupar y con «Fechas» = Fecha de inicio, «Fechas de fin» = Fecha de finalización y «Orígenes» = Origen; así GymTracker no suma dos veces lo que cuentan a la vez el iPhone y el Apple Watch, igual que la app Salud. Sin «Orígenes» se guarda tal cual (búsqueda agrupada por día).",
         categoryName: "Salud"
     )
 
@@ -246,13 +246,30 @@ struct SaveHealthDataIntent: AppIntent {
     @Parameter(title: "Fechas")
     var dates: [String]?
 
+    /// Con «Orígenes»: propiedad Fecha de finalización de las mismas muestras.
+    @Parameter(title: "Fechas de fin")
+    var endDates: [String]?
+
+    /// Propiedad Origen de las mismas muestras. Si llega, se quitan los solapes entre
+    /// orígenes (`HealthSampleMerger`) en vez de sumarlo todo.
+    @Parameter(title: "Orígenes")
+    var sources: [String]?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Guardar \(\.$data): \(\.$values) en las fechas \(\.$dates)")
+        Summary("Guardar \(\.$data): \(\.$values) en las fechas \(\.$dates)") {
+            \.$endDates
+            \.$sources
+        }
     }
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let calendar = GymCalendar.make()
+        let sourceNames = ShortcutsInputParser.items(sources ?? [])
+        if !sourceNames.isEmpty, let metric = data.metric, metric != .bodyMassKg {
+            return .result(value: try await importSamples(metric, sourceNames: sourceNames, calendar: calendar))
+        }
+
         let parsed = try ShortcutsInputParser.parse(values: values, dates: dates, calendar: calendar)
         guard let metric = data.metric else {
             return .result(value: try importVO2Max(parsed, calendar: calendar))
@@ -265,6 +282,29 @@ struct SaveHealthDataIntent: AppIntent {
         NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
         let what = data == .bodyMassKg ? "Peso actualizado" : "Días actualizados"
         return .result(value: "\(what): \(updated) · valores recibidos: \(parsed.values.count)")
+    }
+
+    /// Muestras sin agrupar con su origen: GymTracker calcula el total de cada día como Salud.
+    @MainActor
+    private func importSamples(_ metric: HealthBridgeMetric, sourceNames: [String], calendar: Calendar) async throws -> String {
+        let numbers = try ShortcutsInputParser.numbers(values)
+        let starts = try ShortcutsInputParser.dates(dates ?? [], timeZone: calendar.timeZone)
+        let ends = try ShortcutsInputParser.dates(endDates ?? [], timeZone: calendar.timeZone)
+        guard numbers.count == starts.count, numbers.count == ends.count, numbers.count == sourceNames.count else {
+            throw HealthBridgeError.mismatchedSampleLists(
+                values: numbers.count,
+                starts: starts.count,
+                ends: ends.count,
+                sources: sourceNames.count
+            )
+        }
+        let samples = numbers.indices.map {
+            HealthSourceSample(value: numbers[$0], start: starts[$0], end: ends[$0], source: sourceNames[$0])
+        }
+        let updated = try await AppDependencies.shared.bridgeStore.importSamples(metric, samples: samples)
+        NotificationCenter.default.post(name: .healthBridgeDidChange, object: nil)
+        let order = HealthSampleMerger.orderedSources(in: samples).joined(separator: " > ")
+        return "Días actualizados: \(updated) · muestras recibidas: \(samples.count) · orígenes (manda el primero): \(order)"
     }
 
     /// El VO2max no es diario (el reloj lo estima solo en algunas sesiones al aire libre),

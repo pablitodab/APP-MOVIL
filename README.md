@@ -41,7 +41,7 @@ Por qué el IPA lleva una firma ad-hoc: Sideloadly toma los *entitlements* (perm
 
 Con Sideloadly y un Apple ID gratuito la app no puede usar HealthKit (ver arriba), pero la app **Atajos** sí lee y escribe en Salud. La app lo detecta sola (el perfil de la firma no tiene HealthKit) y cambia a este modo:
 
-- **Leer:** el atajo «Salud a GymTracker» busca en Salud los totales por día y se los pasa a la app con la acción *Guardar datos de Salud en GymTracker*. Se guardan en `Application Support/HealthBridge.json` (`HealthBridgeStore`). Antes del primer envío, Progreso dice que falta el atajo en vez de mostrar ceros.
+- **Leer:** el atajo «Salud a GymTracker» busca en Salud las muestras de cada dato (con su origen) y se las pasa a la app con la acción *Guardar datos de Salud en GymTracker*, que calcula los totales por día sin contar dos veces lo que registran a la vez el iPhone y el Apple Watch (`HealthSampleMerger`). Se guardan en `Application Support/HealthBridge.json` (`HealthBridgeStore`). Antes del primer envío, Progreso dice que falta el atajo en vez de mostrar ceros.
 - **Escribir:** al terminar un entrenamiento con "Guardar en Salud", la app lo deja en cola y abre el atajo «GymTracker a Salud», que toma el más antiguo con *Próximo entrenamiento para Salud* (sin bucle: dentro de «Repetir» Atajos no expone las propiedades del ítem), lo registra con *Registrar entrenamiento*, lo marca con *Marcar entrenamiento como registrado en Salud* y vuelve a la app. Solo se marca si el atajo pasa el resultado de *Registrar entrenamiento* (`HealthWorkoutConfirmation`); si no, el detalle lo muestra como pendiente. Las marcas de versiones anteriores, que no lo comprobaban (`healthKitWorkoutID == id`), salen como «Sin confirmar en Salud» y se pueden reenviar.
 - Botones para ejecutar los dos atajos y el estado del puente (último envío, días, pendientes) en *Progreso → estetoscopio*. En Progreso, el botón de flechas ejecuta «Salud a GymTracker».
 
@@ -51,14 +51,18 @@ Los nombres de los atajos tienen que ser **exactamente** «Salud a GymTracker» 
 
 Para cada dato, dos acciones (crea el primer bloque y duplícalo):
 
-1. **Buscar muestras de salud** (en español puede llamarse *Buscar muestras médicas*) donde *Tipo* es **Pasos** y *Fecha de inicio* está en **el último año**. Pulsa **Añadir filtro** → **Origen** es **tu iPhone** (si llevas Apple Watch, mira la nota de abajo). *Agrupar por*: **Día**. Activa **Completar las que faltan**. *Ordenar por*: Fecha de inicio, **Más antiguo primero**. Sin límite.
-2. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos. En *Valores* pon la variable *Muestras médicas* y toca sobre ella para elegir la propiedad **Valor**. En *Fechas* pon *Muestras médicas* con la propiedad **Fecha de inicio**, o déjalo vacío: entonces la app entiende un valor por día terminando hoy, que es justo lo que da la búsqueda con *Completar las que faltan* y *Más antiguo primero*.
+1. **Buscar muestras de salud** (en español puede llamarse *Buscar muestras médicas*) donde *Tipo* es **Pasos** y *Fecha de inicio* está en **los últimos 35 días**. **Sin filtro de Origen**. *Agrupar por*: **Ninguno** (y sin *Completar las que faltan*). *Ordenar por*: Fecha de inicio, **Más antiguo primero**. Sin límite.
+2. **Guardar datos de Salud en GymTracker** → *Dato*: Pasos. Toca la flecha de la acción para ver todos los campos y pon en cada uno la variable *Muestras médicas* tocando sobre ella para elegir la propiedad:
+   - *Valores* → **Valor**
+   - *Fechas* → **Fecha de inicio**
+   - *Fechas de fin* → **Fecha de finalización**
+   - *Orígenes* → **Origen**
 
-**Por qué el filtro de Origen:** Atajos suma las muestras de todas las fuentes sin quitar duplicados, a diferencia de la app Salud. Si otra app (p. ej. Fitia o Lyfta) también escribe pasos o calorías, sin el filtro los totales salen más altos que en Salud. Puedes ver qué fuentes hay en *Salud → Pasos → Fuentes de datos y acceso*. Con Apple Watch, filtra por el reloj si es el que llevas todo el día.
+**Por qué así:** el iPhone y el Apple Watch cuentan los mismos pasos mientras llevas los dos. La app Salud no los suma: en cada momento usa el origen con más prioridad (el reloj, salvo que cambies el orden en *Salud → Pasos → Fuentes de datos y acceso*) y solo rellena con el iPhone los ratos sin reloj. *Buscar muestras de salud* de Atajos, en cambio, lo suma todo, también agrupando por día, y por eso salían más pasos y kilómetros que en Salud. Con las muestras sueltas y su origen, GymTracker hace la misma cuenta que Salud (`HealthSampleMerger`): primero los relojes, luego el iPhone y luego apps y Atajos (por ejemplo, las kcal de un entreno registrado con «GymTracker a Salud» no se suman a las del reloj). No filtres por Origen: perderías los pasos de los ratos en los que solo llevas uno de los dos.
 
-**Al duplicar un bloque**, la acción *Guardar* copiada sigue apuntando a la búsqueda del bloque original. Vuelve a elegir en *Valores* la variable de la búsqueda nueva (propiedad *Valor*) y deja *Fechas* vacío, o pon la *Fecha de inicio* de esa misma búsqueda.
+**Al duplicar un bloque**, la acción *Guardar* copiada sigue apuntando a la búsqueda del bloque original. Vuelve a elegir en los cuatro campos la variable de la búsqueda nueva.
 
-Al ejecutarlo, la acción devuelve un texto del tipo "Días actualizados: 366 · valores recibidos: 366". Si "valores recibidos" es 1 en vez de unos 366, algo no cuadra: mándame una captura de ese resultado.
+Al ejecutarlo, la acción devuelve un texto del tipo "Días actualizados: 35 · muestras recibidas: 9.214 · orígenes (manda el primero): Apple Watch de Pablo > iPhone de Pablo". Si sale un error de que los números no coinciden, alguno de los cuatro campos apunta a otra búsqueda o le falta la propiedad.
 
 Si Atajos avisa de que va a compartir muchos elementos, elige *Permitir compartir grandes cantidades de datos*.
 
@@ -71,10 +75,12 @@ Repite el bloque con estos tipos y unidades (la unidad se elige en *Buscar muest
 | Energía activa | kcal | Calorías activas (kcal) |
 | Energía en reposo | kcal | Calorías en reposo (kcal) |
 | Minutos de ejercicio | min | Minutos de ejercicio |
-| Peso (opcional) | kg | Peso (kg); aquí sin agrupar ni completar, *Más reciente primero*, *Límite* 1 y con *Fechas* = Fecha de inicio |
-| VO2 máx. (opcional; puede llamarse *Capacidad cardiorrespiratoria*) | mL/(kg·min) | VO2max (ml/kg/min); sin agrupar ni completar, sin límite y con *Fechas* = Fecha de inicio (obligatorio) |
+| Peso (opcional) | kg | Peso (kg); aquí *Más reciente primero*, *Límite* 1, *Fechas* = Fecha de inicio y *Fechas de fin* y *Orígenes* vacíos |
+| VO2 máx. (opcional; puede llamarse *Capacidad cardiorrespiratoria*) | mL/(kg·min) | VO2max (ml/kg/min); sin límite, *Fechas* = Fecha de inicio (obligatorio) y *Fechas de fin* y *Orígenes* vacíos |
 
-Si el atajo tarda mucho, cambia "el último año" por "los últimos 35 días": lo ya importado se conserva.
+**Los días anteriores a esos 35** conservan lo que se importó antes, que con iPhone y reloj a la vez estaba inflado. Para corregirlos, ejecuta el atajo una vez con *el último año* en las búsquedas de pasos, distancia y calorías (tarda más: son muchas muestras) y vuelve después a *los últimos 35 días*. El primer día de la búsqueda puede venir a medias, así que la app solo lo rellena si aún no tenía dato.
+
+**Modo antiguo:** si en *Guardar* dejas *Orígenes* vacío, la app guarda la búsqueda tal cual (agrupada por día, con *Completar las que faltan*), sumando todos los orígenes como hacía antes.
 
 ### Atajo 2: «GymTracker a Salud»
 
@@ -111,7 +117,7 @@ Si en Salud el entreno sale con duración 0, cambia *Duración* por la propiedad
 
 *Atajos → Automatización → Nueva automatización → App → GymTracker → Se abre → Ejecutar inmediatamente →* «Salud a GymTracker». Así, cada vez que abres la app se actualizan los datos.
 
-La primera vez que se ejecuten, Atajos pedirá permiso para leer y escribir en Salud: acéptalo. Compara una vez los pasos de un día con los de la app Salud: si tienes iPhone y Apple Watch y no coinciden, avisa.
+La primera vez que se ejecuten, Atajos pedirá permiso para leer y escribir en Salud: acéptalo. Compara una vez los pasos de un día con los de la app Salud: deben salir muy parecidos (la app trabaja al minuto y Salud al segundo, así que puede haber una diferencia pequeña). Si no, avisa con una captura del resultado de la acción.
 
 ## Salud con cuenta de pago: TestFlight
 
